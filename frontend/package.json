@@ -1,0 +1,38 @@
+{
+  "name": "agentcrawlerstudio-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@codingame/monaco-vscode-api": "~20.2.1",
+    "@codingame/monaco-vscode-configuration-service-override": "~20.2.1",
+    "@codingame/monaco-vscode-editor-api": "~20.2.1",
+    "@codingame/monaco-vscode-editor-service-override": "~20.2.1",
+    "@codingame/monaco-vscode-languages-service-override": "~20.2.1",
+    "@codingame/monaco-vscode-log-service-override": "~20.2.1",
+    "@codingame/monaco-vscode-model-service-override": "~20.2.1",
+    "@monaco-editor/react": "^4.6.0",
+    "monaco-languageclient": "~9.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vscode": "npm:@codingame/monaco-vscode-extension-api@~20.2.1",
+    "vscode-ws-jsonrpc": "~3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "pyright": "^1.1.412",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.11"
+  },
+  "overrides": {
+    "monaco-editor": "npm:@codingame/monaco-vscode-editor-api@20.2.1"
+  }
+}
