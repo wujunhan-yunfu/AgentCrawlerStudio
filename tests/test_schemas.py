@@ -152,3 +152,71 @@ def test_status_result():
         cdp=None, pages=[],
     )
     assert s.chrome is True
+
+
+def test_code_commit_request():
+    from backend.schemas import CodeCommitRequest
+
+    r = CodeCommitRequest(message="修复翻页", content="a=1", author="dev")
+    assert r.message == "修复翻页"
+    assert r.content == "a=1"
+    assert r.author == "dev"
+    assert r.crawler_id is None
+    # message 首尾空白会被去除
+    r2 = CodeCommitRequest(message="  msg  ", content="x")
+    assert r2.message == "msg"
+    # 默认 author
+    assert r2.author == "unknown"
+    with pytest.raises(ValidationError):
+        CodeCommitRequest(content="x")  # message 必填
+    with pytest.raises(ValidationError):
+        CodeCommitRequest(message="   ", content="x")  # 空白 message 拒绝
+    with pytest.raises(ValidationError):
+        CodeCommitRequest(message="m")  # content 必填
+    with pytest.raises(ValidationError):
+        CodeCommitRequest(message="a" * 201, content="x")  # 超过 200 字符
+
+
+def test_code_checkout_request():
+    from backend.schemas import CodeCheckoutRequest
+
+    r = CodeCheckoutRequest(commit_id="abc")
+    assert r.commit_id == "abc"
+    assert r.crawler_id is None
+    with pytest.raises(ValidationError):
+        CodeCheckoutRequest()  # commit_id 必填
+
+
+def test_code_response_models():
+    from backend.schemas import (
+        CodeCheckoutResult,
+        CodeCommitInfo,
+        CodeCommitListResult,
+        CodeCommitResult,
+        CodeCommitSummary,
+        CodeHeadInfo,
+        CodeRepoResult,
+    )
+
+    head = CodeHeadInfo(commit_id="a", message="m", created_at=1)
+    repo = CodeRepoResult(crawler_id="c", has_commits=True, head=head)
+    assert repo.head.message == "m"
+    empty = CodeRepoResult(crawler_id="c", has_commits=False)
+    assert empty.head is None
+
+    info = CodeCommitInfo(commit_id="a", message="m", created_at=1, size=3,
+                          content="x", content_hash="h")
+    assert info.author == "unknown"
+    assert info.parent is None
+    res = CodeCommitResult(ok=True, commit=info)
+    assert res.commit.commit_id == "a"
+
+    summary = CodeCommitSummary(commit_id="a", message="m", created_at=1, size=3)
+    assert summary.stat == {"add": 0, "del": 0}
+    assert summary.author == "unknown"
+    lst = CodeCommitListResult(commits=[summary])
+    assert len(lst.commits) == 1
+    assert CodeCommitListResult().commits == []
+
+    co = CodeCheckoutResult(ok=True, commit_id="a", code="x")
+    assert co.code == "x"

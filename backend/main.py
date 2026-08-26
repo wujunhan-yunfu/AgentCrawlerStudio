@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .config import STATIC_DIR, Config, build_config
-from .routers import agent, console, control, lsp, stream
+from .routers import agent, console, control, lsp, stream, versions
 from .services.agent.core import (
     AGENT_BACKEND_DIR,
     AGENT_SAVED_DIR,
@@ -67,6 +67,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     app.include_router(lsp.router, prefix=cfg.api_prefix)
     app.include_router(stream.router, prefix=cfg.api_prefix)
     app.include_router(agent.router, prefix=cfg.api_prefix)
+    app.include_router(versions.router, prefix=cfg.api_prefix)
     return app
 
 

@@ -2980,3 +2980,313 @@ button.primary {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ---------------- 源码管理面板 ---------------- */
+
+.versions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  font-size: 12px;
+}
+
+.vc-status {
+  padding: 12px;
+  color: var(--oc-text-muted);
+  text-align: center;
+}
+
+.vc-error {
+  padding: 6px 8px;
+  border: 1px solid var(--oc-diff-del-bg);
+  background: var(--oc-diff-del-bg);
+  color: var(--oc-diff-del);
+  border-radius: 2px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.vc-merge-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--oc-diff-add-bg);
+  background: var(--oc-diff-add-bg);
+  color: var(--oc-diff-add-sign);
+  border-radius: 2px;
+}
+
+.vc-merge-banner button {
+  font-size: 12px;
+  padding: 2px 10px;
+}
+
+.vc-section {
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vc-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--oc-bg-2, #16181d);
+  border-bottom: 1px solid var(--oc-border-subtle);
+  color: var(--oc-text-muted);
+}
+
+.vc-section-title {
+  font-weight: 600;
+}
+
+.vc-section-body {
+  padding: 8px;
+}
+
+.vc-dirty {
+  color: var(--oc-diff-add);
+  font-weight: 600;
+}
+
+.vc-clean {
+  color: var(--oc-text-muted);
+}
+
+.vc-link {
+  background: none;
+  border: none;
+  color: var(--oc-accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  margin-left: auto;
+}
+
+.vc-link:hover {
+  text-decoration: underline;
+}
+
+.vc-commit-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+}
+
+.vc-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--oc-input-bg, #1e2026);
+  color: var(--oc-text);
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.vc-input:focus {
+  outline: none;
+  border-color: var(--oc-accent);
+}
+
+.vc-commit-row button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 2px;
+  background: var(--oc-element);
+  color: var(--oc-text);
+  cursor: pointer;
+}
+
+.vc-commit-row button.primary {
+  background: var(--oc-accent);
+  color: #fff;
+  border-color: var(--oc-accent);
+}
+
+.vc-commit-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vc-commit-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 8px;
+  color: var(--oc-text-muted);
+}
+
+.vc-commits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.vc-commit {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+}
+
+.vc-commit:last-child {
+  border-bottom: none;
+}
+
+.vc-commit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vc-commit-hash {
+  color: var(--oc-accent);
+  font-family: ui-monospace, monospace;
+  flex: none;
+}
+
+.vc-commit-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vc-commit-meta {
+  color: var(--oc-text-muted);
+  margin-top: 2px;
+}
+
+.vc-commit-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.vc-commit-actions .vc-link {
+  margin-left: 0;
+}
+
+.vc-empty {
+  padding: 10px 8px;
+  color: var(--oc-text-muted);
+}
+
+.vc-repo {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--oc-text-muted);
+  word-break: break-all;
+}
+
+.vc-code {
+  font-family: ui-monospace, monospace;
+  color: var(--oc-text);
+}
+
+.vc-muted {
+  color: var(--oc-text-muted);
+}
+
+.vc-warn {
+  color: var(--oc-diff-del);
+}
+
+.vc-pad {
+  padding: 8px;
+}
+
+/* ---------------- 冲突解决 ---------------- */
+
+.vc-conflict {
+  border: 1px solid var(--oc-diff-del-bg);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vc-conflict-title {
+  padding: 6px 8px;
+  background: var(--oc-diff-del-bg);
+  color: var(--oc-diff-del);
+  font-weight: 600;
+}
+
+.vc-conflict-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+}
+
+.vc-conflict-actions button {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 2px;
+  background: var(--oc-element);
+  color: var(--oc-text);
+  cursor: pointer;
+}
+
+.vc-conflict-actions button:hover {
+  border-color: var(--oc-accent);
+}
+
+.vc-conflict-block {
+  padding: 8px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+}
+
+.vc-conflict-block:last-child {
+  border-bottom: none;
+}
+
+.vc-conflict-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.vc-conflict-label {
+  color: var(--oc-text-muted);
+}
+
+.vc-conflict-picker button {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 2px;
+  background: var(--oc-element);
+  color: var(--oc-text);
+  cursor: pointer;
+}
+
+.vc-conflict-picker button.active {
+  border-color: var(--oc-accent);
+  color: var(--oc-accent);
+}
+
+.vc-conflict-confirm {
+  padding: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vc-conflict-confirm button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--oc-accent);
+  border-radius: 2px;
+  background: var(--oc-accent);
+  color: #fff;
+  cursor: pointer;
+}

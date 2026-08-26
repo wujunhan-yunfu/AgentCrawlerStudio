@@ -12,6 +12,7 @@ import { useLiveStream } from "./hooks/useLiveStream";
 import { useConsole } from "./hooks/useConsole";
 import { useProblems } from "./hooks/useProblems";
 import { useStatus } from "./hooks/useStatus";
+import { useVersions } from "./hooks/useVersions";
 import { runCode, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, runLoginStatus, type SavedItem, type RunLoginRequestData } from "./utils/api";
 
 const OUTPUT_DEFAULT_HEIGHT = 300;
@@ -50,6 +51,7 @@ export default function App() {
   const { imgRef, connected, lagMs, fps, width, height } = useLiveStream();
   const consoleState = useConsole();
   const status = useStatus();
+  const versions = useVersions(code, setCode);
 
   // 编辑器内容防抖同步到后端, 供"编码调试" Agent 读取/回写
   useEffect(() => {
@@ -291,6 +293,7 @@ export default function App() {
         onClose={() => setActivePanel(null)}
         status={status}
         onAgentCode={handleAgentCode}
+        versions={versions}
         width={sidebarWidth}
         onResizeStart={beginSidebarResize}
       />

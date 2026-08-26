@@ -264,11 +264,84 @@ export function agentFinalize(
 }
 
 export function getEditorCode(): Promise<{ ok: boolean; code: string }> {
-  return post("/editor/code");
+  return get("/editor/code");
 }
 
 export function setEditorCode(code: string): Promise<{ ok: boolean }> {
   return post("/editor/code", { code });
+}
+
+/* ---------------- 代码版本管理 ---------------- */
+
+export interface CodeHeadInfo {
+  commit_id: string;
+  message: string;
+  created_at: number;
+}
+
+export interface CodeRepoResult {
+  crawler_id: string;
+  has_commits: boolean;
+  head: CodeHeadInfo | null;
+}
+
+export interface CodeCommitInfo {
+  commit_id: string;
+  parent: string | null;
+  message: string;
+  author: string;
+  created_at: number;
+  size: number;
+  content: string;
+  content_hash?: string;
+}
+
+export interface CodeCommitSummary {
+  commit_id: string;
+  parent: string | null;
+  message: string;
+  author: string;
+  created_at: number;
+  size: number;
+  stat: { add: number; del: number };
+}
+
+export function codeRepo(crawlerId?: string): Promise<CodeRepoResult> {
+  return get(`/code/repo${qs({ crawler_id: crawlerId })}`);
+}
+
+export function codeCommit(
+  message: string,
+  content: string,
+  author?: string,
+  crawlerId?: string,
+): Promise<{ ok: boolean; commit: CodeCommitInfo }> {
+  return post("/code/commit", { message, content, author, crawler_id: crawlerId });
+}
+
+export function codeCommits(
+  crawlerId?: string,
+  limit?: number,
+  before?: string,
+): Promise<{ commits: CodeCommitSummary[] }> {
+  return get(
+    `/code/commits${qs({
+      crawler_id: crawlerId,
+      limit: limit !== undefined ? String(limit) : undefined,
+      before,
+    })}`,
+  );
+}
+
+export function codeCommitDetail(commitId: string, crawlerId?: string): Promise<CodeCommitInfo> {
+  return get(`/code/commits/${encodeURIComponent(commitId)}${qs({ crawler_id: crawlerId })}`);
+}
+
+export function codeCheckout(
+  commitId: string,
+  crawlerId?: string,
+): Promise<{ ok: boolean; commit_id: string; code: string }> {
+  return post("/code/checkout", { commit_id: commitId, crawler_id: crawlerId });
 }
 
 export function agentWsUrl(): string {

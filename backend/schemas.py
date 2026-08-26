@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class NavigateRequest(BaseModel):
@@ -210,3 +210,75 @@ class StatusResult(BaseModel):
     capture: CaptureStatus
     cdp: ConsoleStatus | None
     pages: list[PageInfo]
+
+
+class CodeCommitRequest(BaseModel):
+    """把工作区内容固化为一次提交。message 必填, 非空且 ≤ 200 字符。"""
+
+    message: str = Field(..., max_length=200, description="提交信息, 非空且 ≤ 200 字符")
+    content: str = Field(..., description="工作区完整源码")
+    author: str = Field(default="unknown", max_length=64, description="提交人名称")
+    crawler_id: str | None = Field(default=None, description="按 crawler 隔离, 缺省回退 default")
+
+    @field_validator("message")
+    @classmethod
+    def _message_nonempty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("提交信息不能为空")
+        return v
+
+
+class CodeCheckoutRequest(BaseModel):
+    """把指定提交的内容检出到工作区(不动 HEAD)。"""
+
+    commit_id: str = Field(..., description="要检出的提交")
+    crawler_id: str | None = Field(default=None, description="按 crawler 隔离, 缺省回退 default")
+
+
+class CodeHeadInfo(BaseModel):
+    commit_id: str
+    message: str
+    created_at: int
+
+
+class CodeRepoResult(BaseModel):
+    crawler_id: str
+    has_commits: bool
+    head: CodeHeadInfo | None = None
+
+
+class CodeCommitInfo(BaseModel):
+    commit_id: str
+    parent: str | None = None
+    message: str
+    author: str = "unknown"
+    created_at: int
+    size: int
+    content: str
+    content_hash: str
+
+
+class CodeCommitResult(BaseModel):
+    ok: bool
+    commit: CodeCommitInfo
+
+
+class CodeCommitSummary(BaseModel):
+    commit_id: str
+    parent: str | None = None
+    message: str
+    author: str = "unknown"
+    created_at: int
+    size: int
+    stat: dict[str, int] = Field(default_factory=lambda: {"add": 0, "del": 0})
+
+
+class CodeCommitListResult(BaseModel):
+    commits: list[CodeCommitSummary] = []
+
+
+class CodeCheckoutResult(BaseModel):
+    ok: bool
+    commit_id: str
+    code: str

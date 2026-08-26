@@ -1,16 +1,19 @@
 import type { ReactNode } from "react";
 import type { PanelKey, Status } from "../types";
+import type { VersionsState } from "../hooks/useVersions";
 import AgentPanel from "./AgentPanel";
 import BrowserControls from "./BrowserControls";
 import PagesList from "./PagesList";
 import ScreenshotPanel from "./ScreenshotPanel";
 import StatusPanel from "./StatusPanel";
+import VersionsPanel from "./VersionsPanel";
 
 interface Props {
   panel: PanelKey | null;
   onClose: () => void;
   status: Status | null;
   onAgentCode?: (code: string, base?: string | null) => void;
+  versions?: VersionsState;
   width: number;
   onResizeStart: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
@@ -22,9 +25,10 @@ const TITLES: Record<PanelKey, string> = {
   pages: "打开页面",
   tools: "工具",
   agent: "爬虫 Agent",
+  versions: "源码管理",
 };
 
-export default function Sidebar({ panel, onClose, status, onAgentCode, width, onResizeStart }: Props) {
+export default function Sidebar({ panel, onClose, status, onAgentCode, versions, width, onResizeStart }: Props) {
   let body: ReactNode = null;
   switch (panel) {
     case "browser":
@@ -46,6 +50,9 @@ export default function Sidebar({ panel, onClose, status, onAgentCode, width, on
           onClose={onClose}
         />
       );
+      break;
+    case "versions":
+      body = versions ? <VersionsPanel versions={versions} /> : null;
       break;
   }
 

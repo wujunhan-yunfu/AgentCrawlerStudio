@@ -1,4 +1,4 @@
-export type PanelKey = "code" | "browser" | "status" | "pages" | "tools" | "agent";
+export type PanelKey = "code" | "browser" | "status" | "pages" | "tools" | "agent" | "versions";
 
 export interface PageInfo {
   id: string;
