@@ -439,6 +439,45 @@ body {
   word-break: break-word;
 }
 
+/* 终端风格流式日志: 左列时间戳 + 右侧内容 */
+.output-bar .output .run-log {
+  display: flex;
+  flex-direction: column;
+}
+
+.output-bar .output .run-line {
+  display: flex;
+  align-items: baseline;
+}
+
+.output-bar .output .run-line-ts {
+  flex: none;
+  width: 82px;
+  margin-right: 8px;
+  color: #6a9955;
+  white-space: pre;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.output-bar .output .run-line-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 流式输出的闪烁光标(与 Agent 面板一致) */
+.output-bar .output .run-line.streaming .caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  background: var(--oc-agent);
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  animation: agent-caret 0.8s steps(1) infinite;
+}
+
 .output-bar .output .err {
   color: #f56565;
 }

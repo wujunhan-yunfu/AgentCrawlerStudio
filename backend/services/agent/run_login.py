@@ -44,6 +44,9 @@ class StandaloneLoginGate:
         self.bridge = bridge
         self._payload: dict[str, Any] | None = None
         self._future: asyncio.Future | None = None
+        # 独立运行时 run_code 在 worker 事件循环执行, 而 /run/*/login-answer 等
+        # HTTP 处理器在主事件循环: 记录主循环用于跨线程安全投递。
+        self._main_loop: asyncio.AbstractEventLoop | None = None
 
     # ---------------------------------------------------------- 交互主流程
 
@@ -52,7 +55,7 @@ class StandaloneLoginGate:
         self._payload = dict(payload)
         loop = asyncio.get_running_loop()
         self._future = loop.create_future()
-        self.hub.emit(
+        self._emit(
             {
                 "type": "run_login_request",
                 "run_id": self.run_id,
@@ -61,7 +64,13 @@ class StandaloneLoginGate:
         )
         monitor = None
         if payload.get("login_type") == "qr":
-            monitor = loop.create_task(self._monitor_qr(payload))
+            # QR 监听需要主事件循环里的 CDP 会话, 调度回主循环执行
+            if self._main_loop is not None and loop is not self._main_loop:
+                self._main_loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(self._monitor_qr(payload))
+                )
+            else:
+                monitor = loop.create_task(self._monitor_qr(payload))
         try:
             return await self._future
         finally:
@@ -70,20 +79,50 @@ class StandaloneLoginGate:
             self._future = None
             self._payload = None
 
+    def _emit(self, event: dict[str, Any]) -> None:
+        """事件总线是主事件循环侧的, 跨线程时安全投递。"""
+        if self._main_loop is not None:
+            try:
+                cur = asyncio.get_running_loop()
+            except RuntimeError:
+                cur = None
+            if cur is not self._main_loop:
+                self._main_loop.call_soon_threadsafe(self.hub.emit, event)
+                return
+        self.hub.emit(event)
+
+    def _resolve_future(self, value: dict[str, Any]) -> None:
+        """跨线程安全地完成挂起脚本等待的 future。"""
+        fut = self._future
+        if fut is None or fut.done():
+            return
+        try:
+            f_loop = fut.get_loop()
+        except RuntimeError:
+            fut.set_result(value)
+            return
+        try:
+            cur = asyncio.get_running_loop()
+        except RuntimeError:
+            cur = None
+        if cur is None or cur is f_loop:
+            fut.set_result(value)
+        else:
+            f_loop.call_soon_threadsafe(fut.set_result, value)
+
     def answer(self, answers: dict[str, Any]) -> None:
         """前端提交登录答案, 恢复被 page_login 挂起的脚本。"""
         if self._future is None or self._future.done():
             raise ValueError("当前没有等待中的登录")
         if not self._payload:
             raise ValueError("登录请求已失效")
-        self._future.set_result(answers)
+        self._resolve_future(answers)
 
     def payload(self) -> dict[str, Any] | None:
         return self._payload
 
     def cancel(self) -> None:
-        if self._future is not None and not self._future.done():
-            self._future.set_result({"cancelled": True})
+        self._resolve_future({"cancelled": True})
 
     # ---------------------------------------------------------- 登录动作
 
@@ -133,14 +172,14 @@ class StandaloneLoginGate:
             if fut is None or fut.done():
                 return
             if loop.time() > deadline:
-                self.hub.emit({"type": "run_login_timeout", "run_id": self.run_id})
+                self._emit({"type": "run_login_timeout", "run_id": self.run_id})
                 return
             r = await self.bridge.evaluate("location.href")
             cur = ""
             if isinstance(r, dict) and r.get("ok"):
                 cur = (r.get("item") or {}).get("v") or ""
             if cur and LoginDetector.navigated_away(start, cur):
-                fut.set_result({"ok": True, "url": cur})
+                self._resolve_future({"ok": True, "url": cur})
                 return
 
     async def finish(self, method: str, url: str) -> None:

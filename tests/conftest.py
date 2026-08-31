@@ -490,10 +490,12 @@ class FakeStream:
     async def screenshot_element(self, selector: str) -> bytes:
         return b"fake-element-png"
 
-    async def run_code(self, code, login_gate=None, restart=True):
+    async def run_code(self, code, login_gate=None, restart=True, on_output=None):
         self.run_code_calls.append((code, login_gate))
+        if on_output:
+            on_output("progress\n")
         if "error" in code:
-            return {"ok": False, "output": "", "error": "boom", "saved": []}
+            return {"ok": False, "output": "progress\n", "error": "boom", "saved": []}
         return {"ok": True, "output": "done", "error": "", "saved": []}
 
     async def restart(self):

@@ -13,7 +13,7 @@ import { useConsole } from "./hooks/useConsole";
 import { useProblems } from "./hooks/useProblems";
 import { useStatus } from "./hooks/useStatus";
 import { useVersions } from "./hooks/useVersions";
-import { runCode, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, runLoginStatus, type SavedItem, type RunLoginRequestData } from "./utils/api";
+import { runCodeStream, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, runLoginStatus, type RunOutputLine, type SavedItem, type RunLoginRequestData } from "./utils/api";
 
 const OUTPUT_DEFAULT_HEIGHT = 300;
 const ACTIVITY_BAR_WIDTH = 48;
@@ -31,7 +31,8 @@ const DEFAULT_CODE = "";
 export default function App() {
   const [code, setCode] = useState(DEFAULT_CODE);
   const [running, setRunning] = useState(false);
-  const [output, setOutput] = useState("");
+  const [output, setOutput] = useState<RunOutputLine[]>([]);
+  const [pending, setPending] = useState<RunOutputLine | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<SavedItem[]>([]);
   const [runId, setRunId] = useState<string | null>(null);
@@ -46,6 +47,7 @@ export default function App() {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const lastSyncedRef = useRef("");
   const codeRef = useRef(DEFAULT_CODE);
+  const pendingOutputRef = useRef("");
   const [model, setModel] = useState<monaco.editor.ITextModel | null>(null);
   const problems = useProblems(model);
   const { imgRef, connected, lagMs, fps, width, height } = useLiveStream();
@@ -109,10 +111,25 @@ export default function App() {
     editor.focus();
   };
 
+  // 流式输出: 把 stdout chunk 按行拆分, 每行附带产生该行的时间戳(类命令行日志);
+  // 未以换行结尾的半个行作为 pending 实时渲染(带闪烁光标), 换行后落入已提交行列表
+  const appendOutput = (data: string, ts: number) => {
+    const text = pendingOutputRef.current + data;
+    const parts = text.split("\n");
+    const complete = parts.slice(0, -1);
+    pendingOutputRef.current = parts[parts.length - 1];
+    if (complete.length) {
+      setOutput((prev) => [...prev, ...complete.map((t) => ({ ts, text: t }))]);
+    }
+    setPending(pendingOutputRef.current ? { ts, text: pendingOutputRef.current } : null);
+  };
+
   const handleRun = async () => {
     if (running) return;
     setRunning(true);
-    setOutput("");
+    setOutput([]);
+    pendingOutputRef.current = "";
+    setPending(null);
     setError("");
     setSaved([]);
     setRunId(null);
@@ -121,8 +138,16 @@ export default function App() {
     setRunId(id);
     void pollRunLogin(id);
     try {
-      const r = await runCode(code, id);
-      setOutput(r.output);
+      const r = await runCodeStream(code, id, (chunk) => {
+        if (chunk.type === "stdout") {
+          appendOutput(chunk.data, chunk.ts);
+        }
+      });
+      if (pendingOutputRef.current) {
+        setOutput((prev) => [...prev, { ts: Date.now(), text: pendingOutputRef.current }]);
+        pendingOutputRef.current = "";
+        setPending(null);
+      }
       setError(r.error);
       setSaved(r.saved ?? []);
     } catch (e) {
@@ -318,6 +343,7 @@ export default function App() {
         onFormat={handleFormat}
         onOrganizeImports={handleOrganizeImports}
         output={output}
+        pending={pending}
         error={error}
         saved={saved}
         problems={problems}

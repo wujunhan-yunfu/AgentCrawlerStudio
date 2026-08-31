@@ -11,7 +11,7 @@ import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -50,10 +50,21 @@ class BrowserStream:
         self._env: dict = {}
         self._profile_dir: str | None = None
         self._http: httpx.AsyncClient | None = None
+        self._http_loop: asyncio.AbstractEventLoop | None = None
 
     def _client(self) -> httpx.AsyncClient:
-        if self._http is None:
+        """返回绑定当前事件循环的 CDP HTTP 客户端。
+
+        run_code 可能在独立 worker 事件循环中调用(见 routers.control),
+        跨循环复用 httpx 客户端不安全, 这里按事件循环自动重建。
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if self._http is None or self._http_loop is not loop:
             self._http = httpx.AsyncClient(timeout=1.0)
+            self._http_loop = loop
         return self._http
 
     # ---------- 子进程 ----------
@@ -208,7 +219,7 @@ class BrowserStream:
         self.started_at = time.time()
         try:
             self.cfg.cdp_port = find_free_port(self.cfg.cdp_port)
-            self._http = httpx.AsyncClient(timeout=1.0)
+            self._client()
             await asyncio.to_thread(self._cleanup_stale_chrome)
             await self._start_xvfb()
             await self._start_chrome()
@@ -243,8 +254,21 @@ class BrowserStream:
             await asyncio.to_thread(shutil.rmtree, self._profile_dir, True)
             self._profile_dir = None
         if self._http is not None:
-            await self._http.aclose()
+            # 客户端可能绑定到 worker 事件循环(独立运行), 在独立线程里关闭, 避免跨循环
+            try:
+                await asyncio.to_thread(self._close_http_sync, self._http)
+            except Exception:  # noqa: BLE001
+                pass
             self._http = None
+            self._http_loop = None
+
+    @staticmethod
+    def _close_http_sync(client: httpx.AsyncClient) -> None:
+        """在独立线程里关闭 httpx 客户端(与它创建时的事件循环解耦)。"""
+        try:
+            asyncio.run(client.aclose())
+        except Exception:  # noqa: BLE001
+            pass
 
     async def restart(self) -> None:
         await self.stop()
@@ -254,13 +278,27 @@ class BrowserStream:
         await self._sync_broker_connect()
 
     async def _sync_broker_connect(self) -> None:
-        """等 CDP 监听连上新浏览器(消除 run_code 首屏事件竞态)"""
-        self.cdp.rescan()
-        if self.loop is not None:
+        """等 CDP 监听连上新浏览器(消除 run_code 首屏事件竞态)。
+
+        独立运行(routers.control)时 run_code 在 worker 事件循环里执行,
+        若不在主事件循环, 把 CDP 重连调度回主循环, 避免跨循环共享 CDP 会话。
+        """
+        if isinstance(self.loop, asyncio.AbstractEventLoop):
             try:
-                await self.cdp.connect_now()
-            except Exception:  # noqa: BLE001
-                pass
+                cur = asyncio.get_running_loop()
+            except RuntimeError:
+                cur = None
+            if cur is not None and cur is not self.loop:
+                self.loop.call_soon_threadsafe(self.cdp.rescan)
+                self.loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(self.cdp.connect_now())
+                )
+                return
+        self.cdp.rescan()
+        try:
+            await self.cdp.connect_now()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def restart_chrome(self) -> None:
         """仅重启 Chrome(保留 Xvfb/抓屏), 每次执行代码前得到全新无痕浏览器"""
@@ -386,7 +424,8 @@ class BrowserStream:
             pass
 
     async def run_code(self, code: str, login_gate: Any = None,
-                       restart: bool = True) -> dict:
+                       restart: bool = True,
+                       on_output: Callable[[str], Any] | None = None) -> dict:
         """执行用户编写的 Playwright 代码(async 风格)。
 
         restart=True(默认)时执行前先重启 Chrome 得到全新无痕浏览器(保留 Xvfb 与抓屏);
@@ -397,9 +436,11 @@ class BrowserStream:
         page_login, print 输出会被捕获, 保存的内容(save_page/save_content)随结果返回。
         脚本为 async 风格: 使用 page/context/browser 及内置函数时需 await
         (如 `await page.goto(url)`、`await save_page()`), 顶层 await 受支持。
-        login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交互;
-        非 Agent 调用(前端直接运行)时不传, page_login 会抛明确错误。
-        代码运行在受限环境: 除 save_content / save_page 外的一切文件读写
+login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交互;
+         非 Agent 调用(前端直接运行)时不传, page_login 会抛明确错误。
+         on_output: 可选回调, stdout/stderr 每次写入都会同步调用它(用于流式
+         实时输出), 回调为同步函数, 需自行把数据交给事件循环。
+         代码运行在受限环境: 除 save_content / save_page 外的一切文件读写
         (open / os / pathlib / shutil / subprocess / io 等)均被禁用。
         开发测试模式(默认开启)下 save_page/save_content 自动限制数据量,
         limit_items(data, n) 可用于限制遍历长度; 上线时加 --no-dev-limit 取消。
@@ -410,6 +451,24 @@ class BrowserStream:
 
         from .crawler import CrawlerEnv
         from .sandbox import safe_builtins
+
+        class _OutputTee:
+            """捕获 stdout/stderr 的同时实时转发给回调, 兼容 redirect_stdout 接口。"""
+
+            def __init__(self) -> None:
+                self._buf = StringIO()
+
+            def write(self, s: str) -> int:
+                self._buf.write(s)
+                if s and on_output is not None:
+                    on_output(s)
+                return len(s)
+
+            def flush(self) -> None:
+                return None
+
+            def getvalue(self) -> str:
+                return self._buf.getvalue()
 
         if restart:
             try:
@@ -427,7 +486,7 @@ class BrowserStream:
         if self.error:
             return {"ok": False, "output": "", "error": self.error, "saved": []}
 
-        out = StringIO()
+        out = _OutputTee()
         pw = None
         browser = None
         env_obj: CrawlerEnv | None = None

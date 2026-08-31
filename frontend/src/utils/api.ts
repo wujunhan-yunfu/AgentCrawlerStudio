@@ -64,8 +64,83 @@ async function patch<T>(path: string, body?: unknown): Promise<T> {
   return j as T;
 }
 
-export function runCode(code: string, runId?: string): Promise<RunResult> {
-  return post<RunResult>("/run", { code, run_id: runId });
+/* ---------------- 流式运行代码 ---------------- */
+
+export interface RunOutputLine {
+  ts: number;
+  text: string;
+}
+
+export interface RunStreamStart {
+  type: "start";
+  run_id: string;
+  ts: number;
+}
+
+export interface RunStreamStdout {
+  type: "stdout";
+  data: string;
+  ts: number;
+}
+
+export interface RunStreamHeartbeat {
+  type: "heartbeat";
+  ts: number;
+}
+
+export interface RunStreamDone {
+  type: "done";
+  result: RunResult;
+  ts: number;
+}
+
+export type RunStreamChunk = RunStreamStart | RunStreamStdout | RunStreamHeartbeat | RunStreamDone;
+
+/** 流式执行代码(SSE): 通过 onChunk 实时返回 stdout/心跳等事件, 结束时返回最终 RunResult。 */
+export async function runCodeStream(
+  code: string,
+  runId?: string,
+  onChunk?: (chunk: RunStreamChunk) => void,
+): Promise<RunResult> {
+  const r = await fetch(api("/run"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, run_id: runId }),
+  });
+  if (!r.ok || !r.body) {
+    const text = await r.text().catch(() => "");
+    throw new Error(text || `请求失败: HTTP ${r.status}`);
+  }
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+    let sep = buf.indexOf("\n\n");
+    while (sep >= 0) {
+      const block = buf.slice(0, sep);
+      buf = buf.slice(sep + 2);
+      const dataLines = block
+        .split("\n")
+        .filter((l) => l.startsWith("data:") && l.length > 5);
+      for (const dataLine of dataLines) {
+        const line = dataLine.slice(5).trim();
+        if (!line) continue;
+        let chunk: RunStreamChunk;
+        try {
+          chunk = JSON.parse(line) as RunStreamChunk;
+        } catch {
+          continue; // 跳过畸形数据块, 避免 JSON 解析异常中断整个流
+        }
+        onChunk?.(chunk);
+        if (chunk.type === "done") return chunk.result;
+      }
+      sep = buf.indexOf("\n\n");
+    }
+  }
+  throw new Error("运行流意外中断(未收到结束标记)");
 }
 
 export interface RunLoginField {

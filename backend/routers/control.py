@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 import uuid
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
 from ..schemas import (
     CookieDeleteRequest,
@@ -28,7 +32,6 @@ from ..schemas import (
     RunLoginAnswerResult,
     RunLoginResult,
     RunRequest,
-    RunResult,
     StatusResult,
     StorageItemsRequest,
     StorageSetRequest,
@@ -39,6 +42,31 @@ from ..services.browser import BrowserError
 
 router = APIRouter(tags=["control"])
 
+# 流式输出空闲保活间隔: 脚本挂起(page_login 等)期间持续发送心跳, 防止前端超时
+_HEARTBEAT_INTERVAL = 5.0
+
+
+def _run_code_worker(stream: Any, code: str, login_gate: Any,
+                     on_output: Callable[[str], None]) -> dict:
+    """在独立线程+独立事件循环中执行 run_code。
+
+    用户脚本(含 time.sleep 等阻塞调用)在单独事件循环里运行, 不阻塞主事件循环,
+    从而保证 stdout 实时流式输出、空闲心跳与最终 done 标记能及时送达前端。
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(
+            stream.run_code(code, login_gate=login_gate, on_output=on_output)
+        )
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except Exception:  # noqa: BLE001
+            pass
+        loop.close()
+        asyncio.set_event_loop(None)
+
 
 def _stream(request: Request):
     return request.app.state.stream
@@ -46,6 +74,11 @@ def _stream(request: Request):
 
 def _run_login(request: Request) -> RunLoginManager:
     return request.app.state.run_login
+
+
+def _sse_event(obj: dict) -> str:
+    """SSE 事件帧: `data: <json>\\n\\n`, 浏览器/代理对 text/event-stream 不做缓冲。"""
+    return "data: " + json.dumps(obj, ensure_ascii=False) + "\n\n"
 
 
 @router.get("/status", response_model=StatusResult)
@@ -77,20 +110,98 @@ async def screenshot(request: Request) -> Response:
     return Response(content=data, media_type="image/png")
 
 
-@router.post("/run", response_model=RunResult)
-async def run(request: Request, req: RunRequest) -> dict:
-    """执行 Playwright 代码: 每次自动重启全新无痕浏览器。
+@router.post("/run")
+async def run(request: Request, req: RunRequest) -> StreamingResponse:
+    """执行 Playwright 代码(SSE 流式): 每次自动重启全新无痕浏览器。
 
+    返回 Server-Sent Events (text/event-stream), 每个事件 `data: <json>\\n\\n`,
+    每个事件都带 ts(毫秒时间戳):
+      - data: {"type": "start", "run_id": ..., "ts": ...}       开始
+      - data: {"type": "stdout", "data": "...", "ts": ...}      实时 stdout/stderr 输出
+      - data: {"type": "heartbeat", "ts": ...}                  空闲保活(脚本挂起时保持连接)
+      - data: {"type": "done", "result": {...}, "ts": ...}      最终结果
+    text/event-stream 不会被浏览器/反向代理缓冲, 输出实时到达前端。
     脚本调用 page_login 时会挂起等待用户在实时画面扫码/填表,
     前端通过 /run/{run_id}/login 轮询获取登录请求并提交答案。
     """
     stream = _stream(request)
     run_id = (req.run_id or "").strip() or uuid.uuid4().hex[:12]
     login_gate = _run_login(request).new_gate(run_id, BrowserBridge(stream))
-    try:
-        return await stream.run_code(req.code, login_gate=login_gate)
-    finally:
-        _run_login(request).remove(run_id)
+    queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
+    main_loop = asyncio.get_running_loop()
+    login_gate._main_loop = main_loop
+
+    # 用户代码在 worker 线程事件循环中执行, 阻塞调用不会拖垮主事件循环;
+    # on_output 由 worker 线程回调, 通过 call_soon_threadsafe 安全投递到本循环。
+    def _on_output(s: str) -> None:
+        main_loop.call_soon_threadsafe(queue.put_nowait, (int(time.time() * 1000), s))
+
+    run_task = asyncio.create_task(
+        asyncio.to_thread(_run_code_worker, stream, req.code, login_gate, _on_output)
+    )
+
+    async def event_stream():
+        get_task: asyncio.Task | None = None
+        try:
+            yield _sse_event({"type": "start", "run_id": run_id, "ts": int(time.time() * 1000)})
+            get_task = asyncio.ensure_future(queue.get())
+            while True:
+                done_set, _ = await asyncio.wait(
+                    {get_task, run_task},
+                    timeout=_HEARTBEAT_INTERVAL,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if run_task in done_set:
+                    # 运行完成: 立即冲刷输出并发送 done, 不必再等下一个心跳周期
+                    if get_task in done_set:
+                        try:
+                            ts, data = get_task.result()
+                            yield _sse_event({"type": "stdout", "data": data, "ts": ts})
+                        except asyncio.CancelledError:
+                            pass
+                    elif not get_task.done():
+                        get_task.cancel()
+                    for _ in range(3):
+                        await asyncio.sleep(0)
+                        while not queue.empty():
+                            ts, data = queue.get_nowait()
+                            yield _sse_event({"type": "stdout", "data": data, "ts": ts})
+                    try:
+                        result = run_task.result()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        result = {
+                            "ok": False,
+                            "output": "",
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "saved": [],
+                        }
+                    yield _sse_event({"type": "done", "result": result, "ts": int(time.time() * 1000)})
+                    return
+                if get_task in done_set:
+                    ts, data = get_task.result()
+                    yield _sse_event({"type": "stdout", "data": data, "ts": ts})
+                    get_task = asyncio.ensure_future(queue.get())
+                    continue
+                # 队列与运行都无进展: 发送空闲心跳, 防止前端/代理等待超时
+                yield _sse_event({"type": "heartbeat", "ts": int(time.time() * 1000)})
+        finally:
+            if not run_task.done():
+                run_task.cancel()
+            if get_task is not None and not get_task.done():
+                get_task.cancel()
+            _run_login(request).remove(run_id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/run/{run_id}/login", response_model=RunLoginResult)

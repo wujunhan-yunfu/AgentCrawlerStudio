@@ -3,7 +3,7 @@ import * as monaco from "monaco-editor";
 import type { ConsoleMessage } from "../hooks/useConsole";
 import type { Problem } from "../hooks/useProblems";
 import type { HighlightBox } from "./ElementsPanel";
-import type { SavedItem } from "../utils/api";
+import type { RunOutputLine, SavedItem } from "../utils/api";
 import ApplicationPanel from "./ApplicationPanel";
 import BrowserConsole from "./BrowserConsole";
 import ElementsPanel from "./ElementsPanel";
@@ -17,7 +17,8 @@ interface Props {
   onRun: () => void;
   onFormat: () => void;
   onOrganizeImports?: () => void;
-  output: string;
+  output: RunOutputLine[];
+  pending: RunOutputLine | null;
   error: string;
   saved: SavedItem[];
   problems: Problem[];
@@ -48,6 +49,7 @@ export default function OutputBar({
   onFormat,
   onOrganizeImports,
   output,
+  pending,
   error,
   saved,
   problems,
@@ -59,6 +61,7 @@ export default function OutputBar({
   onHighlight,
 }: Props) {
   const dragging = useRef(false);
+  const outputRef = useRef<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<"output" | "problems" | "devtools">("output");
   const [devSub, setDevSub] = useState<"console" | "elements" | "network" | "application">("console");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -77,6 +80,12 @@ export default function OutputBar({
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  };
+
+  const formatTs = (ms: number): string => {
+    const d = new Date(ms);
+    const p = (n: number, len = 2) => String(n).padStart(len, "0");
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
   };
 
   const DEV_ITEMS: { key: typeof devSub; label: string }[] = [
@@ -112,6 +121,12 @@ export default function OutputBar({
       window.removeEventListener("mouseup", handleUp);
     };
   }, [onResize]);
+
+  // 流式输出自动滚动到底部(与 Agent 面板一致), 实时跟随最新输出
+  useEffect(() => {
+    const el = outputRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [output, pending, error]);
 
   const errorCount = problems.filter((p) => p.severity === monaco.MarkerSeverity.Error).length;
   const warningCount = problems.filter((p) => p.severity === monaco.MarkerSeverity.Warning).length;
@@ -202,10 +217,28 @@ export default function OutputBar({
       </div>
       <div className="panel-stack">
         <div className={tab === "output" ? "panel-active" : "panel-hidden"}>
-          <div className="output">
-            {output ? <pre>{output}</pre> : null}
+          <div className="output" ref={outputRef}>
+            {output.length > 0 || pending ? (
+              <div className="run-log">
+                {output.map((line, i) => (
+                  <div className="run-line" key={i}>
+                    <span className="run-line-ts">{formatTs(line.ts)}</span>
+                    <span className="run-line-text">{line.text}</span>
+                  </div>
+                ))}
+                {pending ? (
+                  <div className="run-line streaming">
+                    <span className="run-line-ts">{formatTs(pending.ts)}</span>
+                    <span className="run-line-text">
+                      {pending.text}
+                      {running ? <span className="caret" /> : null}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {error ? <pre className="err">{error}</pre> : null}
-            {!output && !error ? (
+            {output.length === 0 && !pending && !error ? (
               <span className="hint">每次执行会自动重启全新无痕浏览器, 并提供 page / context / browser 对象。</span>
             ) : null}
           </div>

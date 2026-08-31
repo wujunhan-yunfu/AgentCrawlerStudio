@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+import time
+
 import httpx
 import pytest
 
@@ -65,22 +69,133 @@ async def test_screenshot_browser_error():
         assert "boom" in resp.json()["detail"]
 
 
+async def _run_chunks(resp) -> list[dict]:
+    """解析 /run 的 SSE 流式响应(data: <json> 事件, 空行分隔)。"""
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers.get("content-type", "")
+    assert resp.headers.get("cache-control") == "no-cache"
+    chunks: list[dict] = []
+    for block in resp.text.split("\n\n"):
+        for line in block.splitlines():
+            if line.startswith("data:"):
+                chunks.append(json.loads(line[5:].strip()))
+    return chunks
+
+
 async def test_run_ok(client):
     app = make_test_app()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as c:
         resp = await c.post("/api/v1/run", json={"code": "print(1)"})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["ok"] is True
-        assert body["output"] == "done"
+        chunks = await _run_chunks(resp)
+    assert chunks[0]["type"] == "start"
+    assert chunks[0]["run_id"]
+    assert isinstance(chunks[0]["ts"], (int, float))
+    stdout = "".join(ch.get("data", "") for ch in chunks if ch["type"] == "stdout")
+    assert stdout == "progress\n"
+    assert all(isinstance(ch["ts"], (int, float)) for ch in chunks if ch["type"] == "stdout")
+    done = chunks[-1]
+    assert done["type"] == "done"
+    assert isinstance(done["ts"], (int, float))
+    assert done["result"]["ok"] is True
+    assert done["result"]["output"] == "done"
 
 
 async def test_run_error(client):
     resp = await client.post("/api/v1/run", json={"code": "raise error"})
-    assert resp.status_code == 200
-    assert resp.json()["ok"] is False
+    chunks = await _run_chunks(resp)
+    done = chunks[-1]
+    assert done["type"] == "done"
+    assert done["result"]["ok"] is False
+    assert done["result"]["error"] == "boom"
+
+
+async def test_run_stream_heartbeat(monkeypatch):
+    """脚本挂起时持续发送心跳 chunk, 防止前端等待超时。"""
+    import backend.routers.control as control_mod
+
+    class _SlowStream(FakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None):
+            await asyncio.sleep(0.2)
+            return {"ok": True, "output": "slow", "error": "", "saved": []}
+
+    monkeypatch.setattr(control_mod, "_HEARTBEAT_INTERVAL", 0.05)
+    app = make_test_app(stream=_SlowStream())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post("/api/v1/run", json={"code": "x"})
+        chunks = await _run_chunks(resp)
+    assert any(ch["type"] == "heartbeat" for ch in chunks)
+    assert chunks[-1]["type"] == "done"
+    assert chunks[-1]["result"]["output"] == "slow"
+
+
+async def test_run_blocking_stream_heartbeat(monkeypatch):
+    """阻塞式脚本(time.sleep)在 worker 事件循环执行, 不拖垮主循环:
+    实时 stdout + 空闲心跳 + done 结束标记都必须按时到达。"""
+    import backend.routers.control as control_mod
+
+    class _BlockingStream(FakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None):
+            for i in range(3):
+                if on_output:
+                    on_output(f"line{i}\n")
+                time.sleep(0.1)  # 阻塞调用: 只能发生在 worker 事件循环里
+            return {"ok": True, "output": "ok", "error": "", "saved": []}
+
+    monkeypatch.setattr(control_mod, "_HEARTBEAT_INTERVAL", 0.02)
+    app = make_test_app(stream=_BlockingStream())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post("/api/v1/run", json={"code": "x"})
+        chunks = await _run_chunks(resp)
+    assert any(ch["type"] == "heartbeat" for ch in chunks)
+    stdout = "".join(ch.get("data", "") for ch in chunks if ch["type"] == "stdout")
+    assert stdout == "line0\nline1\nline2\n"
+    assert chunks[-1]["type"] == "done"
+    assert chunks[-1]["result"]["output"] == "ok"
+
+
+async def test_run_drain_leftover_output():
+    """运行结束时队列里仍有残留输出, done 前必须完整冲刷。"""
+    class _MultiLineStream(FakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None):
+            if on_output:
+                on_output("first\n")
+                on_output("second\n")
+                on_output("third\n")
+            return {"ok": True, "output": "ok", "error": "", "saved": []}
+
+    app = make_test_app(stream=_MultiLineStream())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post("/api/v1/run", json={"code": "x"})
+        chunks = await _run_chunks(resp)
+    stdout = "".join(ch.get("data", "") for ch in chunks if ch["type"] == "stdout")
+    assert stdout == "first\nsecond\nthird\n"
+    assert chunks[-1]["type"] == "done"
+    assert chunks[-1]["result"]["output"] == "ok"
+
+
+async def test_run_worker_exception():
+    """worker 线程抛异常时, 仍以 done 事件返回错误结果, 不中断流。"""
+    class _RaiseStream(FakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None):
+            raise RuntimeError("boom-thread")
+
+    app = make_test_app(stream=_RaiseStream())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post("/api/v1/run", json={"code": "x"})
+        chunks = await _run_chunks(resp)
+    assert chunks[-1]["type"] == "done"
+    assert chunks[-1]["result"]["ok"] is False
+    assert "boom-thread" in chunks[-1]["result"]["error"]
 
 
 async def test_run_login_status_not_waiting(client):
