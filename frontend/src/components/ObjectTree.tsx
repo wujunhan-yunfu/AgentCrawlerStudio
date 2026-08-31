@@ -14,7 +14,7 @@ export function parseStyle(css: string): React.CSSProperties | undefined {
   const weight = css.match(/font-weight:\s*([^;]+)/i);
   const size = css.match(/font-size:\s*([^;]+)/i);
   if (color) style.color = color[1].trim();
-  if (bg) style.backgroundColor = bg[2].trim();
+  if (bg) style.backgroundColor = bg[1].trim();
   if (weight) style.fontWeight = weight[1].trim() as React.CSSProperties["fontWeight"];
   if (size) style.fontSize = size[1].trim();
   return Object.keys(style).length ? style : undefined;
