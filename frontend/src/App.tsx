@@ -137,20 +137,44 @@ export default function App() {
     const id = `run_${Date.now().toString(36)}`;
     setRunId(id);
     void pollRunLogin(id);
-    try {
-      const r = await runCodeStream(code, id, (chunk) => {
-        if (chunk.type === "stdout") {
-          appendOutput(chunk.data, chunk.ts);
-        }
-      });
+
+    // 冲刷未换行的半个输出行, 保证标记与输出顺序正确
+    const flushPending = (ts: number) => {
       if (pendingOutputRef.current) {
-        setOutput((prev) => [...prev, { ts: Date.now(), text: pendingOutputRef.current }]);
+        setOutput((prev) => [...prev, { ts, text: pendingOutputRef.current }]);
         pendingOutputRef.current = "";
         setPending(null);
       }
+    };
+    // 样式化执行开始/结束标记(非文本)
+    const addMarker = (m: { marker: "start" | "end"; ts: number; ok?: boolean; dur?: number }) => {
+      setOutput((prev) => [...prev, { kind: "marker", text: "", ...m }]);
+    };
+
+    let runStartTs = 0;
+    try {
+      const r = await runCodeStream(code, id, (chunk) => {
+        if (chunk.type === "start") {
+          runStartTs = chunk.ts;
+          addMarker({ marker: "start", ts: chunk.ts });
+        } else if (chunk.type === "stdout") {
+          appendOutput(chunk.data, chunk.ts);
+        } else if (chunk.type === "done") {
+          flushPending(chunk.ts);
+          addMarker({
+            marker: "end",
+            ts: chunk.ts,
+            ok: chunk.result.ok,
+            dur: runStartTs ? chunk.ts - runStartTs : 0,
+          });
+        }
+      });
+      flushPending(Date.now());
       setError(r.error);
       setSaved(r.saved ?? []);
     } catch (e) {
+      flushPending(Date.now());
+      addMarker({ marker: "end", ts: Date.now(), ok: false });
       setError(`请求失败: ${e instanceof Error ? e.message : e}`);
     } finally {
       setRunning(false);

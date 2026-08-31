@@ -69,6 +69,11 @@ async function patch<T>(path: string, body?: unknown): Promise<T> {
 export interface RunOutputLine {
   ts: number;
   text: string;
+  /** text: 普通输出行; marker: 执行开始/结束标记(样式化展示, 非文本) */
+  kind?: "text" | "marker";
+  marker?: "start" | "end";
+  ok?: boolean;
+  dur?: number;
 }
 
 export interface RunStreamStart {

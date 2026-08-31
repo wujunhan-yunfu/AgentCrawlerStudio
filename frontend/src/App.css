@@ -486,6 +486,71 @@ body {
   color: #858585;
 }
 
+/* 执行开始/结束标记(样式化分隔条 + 徽标, 非文本) */
+.output-bar .output .run-marker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.output-bar .output .run-marker .run-marker-line {
+  flex: 1;
+  height: 1px;
+  background: #3c3c3c;
+}
+
+.output-bar .output .run-marker .run-marker-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 10px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 10px;
+  border: 1px solid;
+  letter-spacing: 0.5px;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+.output-bar .output .run-marker.start .run-marker-badge {
+  color: #4fc1ff;
+  border-color: rgba(79, 193, 255, 0.4);
+  background: rgba(79, 193, 255, 0.1);
+}
+
+.output-bar .output .run-marker.end.ok .run-marker-badge {
+  color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.4);
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.output-bar .output .run-marker.end.fail .run-marker-badge {
+  color: #f56565;
+  border-color: rgba(245, 101, 101, 0.4);
+  background: rgba(245, 101, 101, 0.1);
+}
+
+.output-bar .output .run-marker .run-marker-dur {
+  flex: none;
+  font-size: 11px;
+  color: #858585;
+  white-space: pre;
+}
+
+.output-bar .output .run-marker .run-marker-ts {
+  flex: none;
+  font-size: 11px;
+  color: #6a9955;
+  white-space: pre;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
 /* 已保存内容 (save_page / save_content) */
 .saved-list {
   border-top: 1px solid #3c3c3c;

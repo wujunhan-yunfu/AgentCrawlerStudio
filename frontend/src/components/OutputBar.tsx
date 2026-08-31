@@ -88,6 +88,14 @@ export default function OutputBar({
     return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
   };
 
+  const formatDur = (ms: number): string => {
+    if (ms < 1000) return `${ms}ms`;
+    const s = ms / 1000;
+    if (s < 60) return `${s.toFixed(2)}s`;
+    const m = Math.floor(s / 60);
+    return `${m}m${Math.round(s % 60)}s`;
+  };
+
   const DEV_ITEMS: { key: typeof devSub; label: string }[] = [
     { key: "console", label: "控制台" },
     { key: "elements", label: "Elements" },
@@ -220,12 +228,33 @@ export default function OutputBar({
           <div className="output" ref={outputRef}>
             {output.length > 0 || pending ? (
               <div className="run-log">
-                {output.map((line, i) => (
-                  <div className="run-line" key={i}>
-                    <span className="run-line-ts">{formatTs(line.ts)}</span>
-                    <span className="run-line-text">{line.text}</span>
-                  </div>
-                ))}
+                {output.map((line, i) =>
+                  line.kind === "marker" ? (
+                    <div
+                      className={`run-marker ${line.marker === "start" ? "start" : `end ${line.ok === false ? "fail" : "ok"}`}`}
+                      key={i}
+                    >
+                      <span className="run-marker-line" />
+                      <span className="run-marker-badge">
+                        {line.marker === "start"
+                          ? "▶ 执行开始"
+                          : line.ok === false
+                            ? "✗ 执行结束"
+                            : "✓ 执行结束"}
+                      </span>
+                      {typeof line.dur === "number" && line.dur > 0 ? (
+                        <span className="run-marker-dur">{formatDur(line.dur)}</span>
+                      ) : null}
+                      <span className="run-marker-ts">{formatTs(line.ts)}</span>
+                      <span className="run-marker-line" />
+                    </div>
+                  ) : (
+                    <div className="run-line" key={i}>
+                      <span className="run-line-ts">{formatTs(line.ts)}</span>
+                      <span className="run-line-text">{line.text}</span>
+                    </div>
+                  ),
+                )}
                 {pending ? (
                   <div className="run-line streaming">
                     <span className="run-line-ts">{formatTs(pending.ts)}</span>
