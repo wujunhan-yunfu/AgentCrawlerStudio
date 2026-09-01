@@ -227,6 +227,17 @@ async def test_agent_login_action_ok(client):
     assert resp.json()["ok"] is True
 
 
+async def test_agent_login_action_refresh_qr(client):
+    resp = await client.post("/api/v1/agent/session", json={"title": "T"})
+    sid = resp.json()["session_id"]
+    resp = await client.post(
+        "/api/v1/agent/login-action",
+        json={"session_id": sid, "action": "refresh_qr"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
 async def test_agent_login_action_bad_action(client):
     resp = await client.post("/api/v1/agent/session", json={"title": "T"})
     sid = resp.json()["session_id"]

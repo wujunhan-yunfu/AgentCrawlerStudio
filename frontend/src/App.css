@@ -424,6 +424,23 @@ body {
   border-radius: 3px;
 }
 
+/* 运行中的执行按钮: 默认红色"执行中...", hover 文本切换为"停止执行" */
+.output-bar-actions button.run-stop {
+  background: #a1260d;
+}
+.output-bar-actions button.run-stop:hover {
+  background: #b02e1a;
+}
+.output-bar-actions button.run-stop .run-stop-hover {
+  display: none;
+}
+.output-bar-actions button.run-stop:hover .run-stop-idle {
+  display: none;
+}
+.output-bar-actions button.run-stop:hover .run-stop-hover {
+  display: inline;
+}
+
 .output-bar .output {
   flex: 1;
   overflow: auto;
@@ -2612,6 +2629,7 @@ button.primary {
 
 .login-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-top: 8px;
@@ -3059,6 +3077,7 @@ button.primary {
 
 .run-login-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-top: 12px;

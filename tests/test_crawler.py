@@ -301,6 +301,8 @@ async def test_page_login_qr_success(env, monkeypatch):
 
 
 async def test_page_login_cancelled(env, monkeypatch):
+    from backend.services.agent.login import LoginCancelled
+
     gate = _FakeGate()
     gate.answers = {"cancelled": True}
     env._login_gate = gate
@@ -309,9 +311,8 @@ async def test_page_login_cancelled(env, monkeypatch):
         return {"method": "qr", "methods": ["qr"], "url": "http://login"}
 
     monkeypatch.setattr("backend.services.agent.login.LoginDetector.analyze", staticmethod(fake_analyze))
-    res = await env.page_login("qr", url="http://login")
-    assert res["ok"] is False
-    assert "用户取消登录" in res["error"]
+    with pytest.raises(LoginCancelled, match="用户取消登录"):
+        await env.page_login("qr", url="http://login")
 
 
 async def test_page_login_account_success(env, monkeypatch):

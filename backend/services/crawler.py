@@ -321,7 +321,7 @@ class CrawlerEnv:
                 "error": "page_login 的 method 必须显式指定为 qr/account/sms 之一, 不支持 auto, "
                          "请先用 ask_user 询问用户采用哪种登录方式再显式传入",
             }
-        from .agent.login import LoginDetector
+        from .agent.login import LoginDetector, LoginCancelled
 
         url = (url or "").strip()
         cur = ""
@@ -383,7 +383,7 @@ class CrawlerEnv:
         payload = LoginDetector.build_payload(info, timeout=timeout)
         answers = await self._login_gate.request(payload)
         if answers.get("cancelled"):
-            return {"ok": False, "method": resolved, "url": "", "error": "用户取消登录"}
+            raise LoginCancelled("用户取消登录")
         if resolved == "qr":
             url = answers.get("url") or ""
             if not url:

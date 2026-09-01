@@ -11,7 +11,7 @@ import asyncio
 from typing import Any
 
 from .bridge import BrowserBridge
-from .login import LoginDetector, _data_uri
+from .login import LoginDetector, _QR_TAB_JS, _data_uri
 
 
 class RunLoginManager:
@@ -158,6 +158,16 @@ class StandaloneLoginGate:
             return _data_uri(data)
         except Exception:  # noqa: BLE001
             return None
+
+    async def refresh_qr(self) -> dict[str, Any]:
+        """刷新二维码: 重新加载当前登录页以生成新二维码(供 /run/*/login-action 调用)。"""
+        r = await self.bridge.evaluate("location.reload(); true")
+        ok = bool(isinstance(r, dict) and r.get("ok"))
+        await asyncio.sleep(0.8)
+        await self.bridge.evaluate(_QR_TAB_JS)
+        msg = "二维码已刷新，请用最新二维码重新扫码" if ok else "二维码刷新失败"
+        self.hub.emit({"type": "run_login_action", "run_id": self.run_id, "action": "refresh_qr", "ok": ok, "message": msg})
+        return {"ok": ok, "message": msg}
 
     # ---------------------------------------------------------- QR 监听
 

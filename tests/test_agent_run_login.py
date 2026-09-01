@@ -182,6 +182,28 @@ async def test_gate_captcha_image_error(hub, bridge):
     assert await gate._captcha_image() is None
 
 
+async def test_gate_refresh_qr(hub, bridge):
+    gate = make_gate(hub, bridge)
+    result = await gate.refresh_qr()
+    assert result["ok"] is True
+    assert "已刷新" in result["message"]
+    ev = [e for e in hub._buffer if e["type"] == "run_login_action"][-1]
+    assert ev["action"] == "refresh_qr"
+
+
+async def test_gate_refresh_qr_fail(hub):
+    class _FakeCdp:
+        async def evaluate(self, expression, timeout=5.0):
+            return {"ok": False, "error": "no page"}
+
+    stream = FakeStream()
+    stream.cdp = _FakeCdp()
+    gate = make_gate(hub, BrowserBridge(stream))
+    result = await gate.refresh_qr()
+    assert result["ok"] is False
+    assert "失败" in result["message"]
+
+
 # --------------------------------------------------------------------------- QR 监听
 
 

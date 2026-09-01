@@ -101,16 +101,19 @@ export interface RunStreamDone {
 
 export type RunStreamChunk = RunStreamStart | RunStreamStdout | RunStreamHeartbeat | RunStreamDone;
 
-/** 流式执行代码(SSE): 通过 onChunk 实时返回 stdout/心跳等事件, 结束时返回最终 RunResult。 */
+/** 流式执行代码(SSE): 通过 onChunk 实时返回 stdout/心跳等事件, 结束时返回最终 RunResult。
+ *  传入 signal 可在执行中主动中止(AbortError), 后端收到连接断开后取消对应运行任务。 */
 export async function runCodeStream(
   code: string,
   runId?: string,
   onChunk?: (chunk: RunStreamChunk) => void,
+  signal?: AbortSignal,
 ): Promise<RunResult> {
   const r = await fetch(api("/run"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, run_id: runId }),
+    signal,
   });
   if (!r.ok || !r.body) {
     const text = await r.text().catch(() => "");

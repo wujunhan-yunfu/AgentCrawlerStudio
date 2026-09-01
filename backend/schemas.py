@@ -41,7 +41,7 @@ class RunLoginAnswerRequest(BaseModel):
 
 
 class RunLoginActionRequest(BaseModel):
-    action: str = Field(description="登录动作: send_code / refresh_captcha")
+    action: str = Field(description="登录动作: send_code / refresh_captcha / refresh_qr")
 
 
 class RunLoginCaptcha(BaseModel):

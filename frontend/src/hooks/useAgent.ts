@@ -87,6 +87,7 @@ export interface AgentState {
   submitLogin: (answers: Record<string, unknown>) => Promise<void>;
   sendLoginCode: () => Promise<void>;
   refreshCaptcha: () => Promise<void>;
+  refreshQr: () => Promise<void>;
   cancelLogin: () => Promise<void>;
   stop: () => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
@@ -1045,19 +1046,38 @@ export function useAgent(): AgentState {
     }
   }, [pushToFeed]);
 
-  const cancelLogin = useCallback(async () => {
+  const refreshQr = useCallback(async () => {
     const sid = activeRef.current;
-    const lg = loginRefs.current[sid ?? ""];
-    if (!sid || !lg) return;
+    if (!sid) return;
     try {
-      await agentLoginAnswer(sid, lg.qid, { cancelled: true }, crawlerIdRef.current ?? undefined);
+      await agentLoginAction(sid, "refresh_qr", crawlerIdRef.current ?? undefined);
     } catch (e) {
       pushToFeed(sid, {
         kind: "error",
-        content: `取消登录失败: ${e instanceof Error ? e.message : String(e)}`,
+        content: `刷新二维码失败: ${e instanceof Error ? e.message : String(e)}`,
       });
     }
   }, [pushToFeed]);
+
+  const cancelLogin = useCallback(async () => {
+    const sid = activeRef.current;
+    if (!sid) return;
+    // 用户取消登录: 清除登录框并终止本次运行(后端 stop 会把会话置为 cancelled)
+    loginRefs.current[sid] = null;
+    if (sid === activeRef.current) {
+      setLogin(null);
+      window.dispatchEvent(new Event("agent:login-unzoom"));
+    }
+    pushToFeed(sid, { kind: "status", content: "用户取消登录，本次任务已终止" });
+    setSessionStatus(sid, "cancelled");
+    try {
+      await agentStop(sid, crawlerIdRef.current ?? undefined);
+    } catch {
+      /* ignore */
+    }
+    // 点击取消后的第二层保障: 显式校正会话记录
+    finalizeWithBackend(sid, "cancelled");
+  }, [finalizeWithBackend, pushToFeed, setSessionStatus]);
 
   const stop = useCallback(async () => {
     const sid = activeRef.current;
@@ -1121,6 +1141,7 @@ export function useAgent(): AgentState {
     submitLogin,
     sendLoginCode,
     refreshCaptcha,
+    refreshQr,
     cancelLogin,
     stop,
     deleteSession,

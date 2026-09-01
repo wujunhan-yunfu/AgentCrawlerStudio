@@ -295,7 +295,8 @@ if not logged_in:                             # 取不到 / 凭据无效(2c) →
    `await set_login_ticket(ticket=cookies, host="example.com")`。
 
 ### 第三步: 收尾
-- page_login 挂起期间会话为等待状态, 不要重复发送消息; 用户取消时按返回结果处理。
+- page_login 挂起期间会话为等待状态, 不要重复发送消息; 用户取消登录时本次运行会被终止,
+  脚本立即停止, 按「任务已取消」收尾, 不要继续执行后续步骤。
 - 交互登录后在同一浏览器内用 page 继续爬取; browser_run_code 每次重启全新浏览器,
   脚本化复用必须靠 get_login_ticket 重新注入凭据。
 

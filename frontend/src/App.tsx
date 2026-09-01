@@ -47,6 +47,7 @@ export default function App() {
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const lastSyncedRef = useRef("");
   const codeRef = useRef(DEFAULT_CODE);
+  const runAbortRef = useRef<AbortController | null>(null);
   const pendingOutputRef = useRef("");
   const [model, setModel] = useState<monaco.editor.ITextModel | null>(null);
   const problems = useProblems(model);
@@ -124,8 +125,14 @@ export default function App() {
     setPending(pendingOutputRef.current ? { ts, text: pendingOutputRef.current } : null);
   };
 
+  const handleStop = () => {
+    runAbortRef.current?.abort();
+  };
+
   const handleRun = async () => {
     if (running) return;
+    const abort = new AbortController();
+    runAbortRef.current = abort;
     setRunning(true);
     setOutput([]);
     pendingOutputRef.current = "";
@@ -136,7 +143,7 @@ export default function App() {
     setRunLogin(null);
     const id = `run_${Date.now().toString(36)}`;
     setRunId(id);
-    void pollRunLogin(id);
+    void pollRunLogin(id, abort.signal);
 
     // 冲刷未换行的半个输出行, 保证标记与输出顺序正确
     const flushPending = (ts: number) => {
@@ -168,26 +175,28 @@ export default function App() {
             dur: runStartTs ? chunk.ts - runStartTs : 0,
           });
         }
-      });
+      }, abort.signal);
       flushPending(Date.now());
       setError(r.error);
       setSaved(r.saved ?? []);
     } catch (e) {
       flushPending(Date.now());
       addMarker({ marker: "end", ts: Date.now(), ok: false });
-      setError(`请求失败: ${e instanceof Error ? e.message : e}`);
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setError(aborted ? "执行已停止" : `请求失败: ${e instanceof Error ? e.message : e}`);
     } finally {
       setRunning(false);
       setRunId(null);
       setRunLogin(null);
       setLiveMaximized(false);
+      runAbortRef.current = null;
     }
   };
 
   // 独立运行期间轮询登录请求: 脚本调用 page_login 时挂起, 前端据此展示登录框
-  const pollRunLogin = async (id: string) => {
+  const pollRunLogin = async (id: string, signal: AbortSignal) => {
     try {
-      while (true) {
+      while (!signal.aborted) {
         const r = await runLoginStatus(id);
         if (r.waiting && r.request) {
           setRunLogin(r.request);
@@ -215,7 +224,7 @@ export default function App() {
     if (!runId) return;
     try {
       const r = await runLoginAction(runId, action);
-      if (action === "refresh_captcha" && r.message && !r.ok) {
+      if ((action === "refresh_captcha" || action === "refresh_qr") && r.message && !r.ok) {
         setError(r.message);
       }
     } catch (e) {
@@ -364,6 +373,7 @@ export default function App() {
         onCornerResizeStart={beginCornerResize}
         running={running}
         onRun={() => void handleRun()}
+        onStop={handleStop}
         onFormat={handleFormat}
         onOrganizeImports={handleOrganizeImports}
         output={output}
@@ -405,6 +415,7 @@ export default function App() {
           onCancel={() => void handleRunLoginSubmit({ cancelled: true })}
           onSendCode={() => void handleRunLoginAction("send_code")}
           onRefreshCaptcha={() => void handleRunLoginAction("refresh_captcha")}
+          onRefreshQr={() => void handleRunLoginAction("refresh_qr")}
         />
       ) : null}
     </div>
@@ -417,12 +428,14 @@ function RunLoginModal({
   onCancel,
   onSendCode,
   onRefreshCaptcha,
+  onRefreshQr,
 }: {
   login: RunLoginRequestData;
   onSubmit: (answers: Record<string, unknown>) => void;
   onCancel: () => void;
   onSendCode: () => void;
   onRefreshCaptcha: () => void;
+  onRefreshQr: () => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [countdown, setCountdown] = useState(0);
@@ -455,6 +468,7 @@ function RunLoginModal({
             <button className="primary" disabled={busy} onClick={() => submit({ ok: true })}>
               我已经完成扫码，继续
             </button>
+            <button onClick={onRefreshQr}>刷新二维码</button>
             <button onClick={onCancel}>取消登录</button>
           </div>
         </div>

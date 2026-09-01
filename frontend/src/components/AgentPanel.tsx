@@ -491,12 +491,13 @@ function QuestionForm({ questions, qid, onSubmit }: {
 
 /* ---------------- 登录引导表单 (page_login) ---------------- */
 
-function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha }: {
+function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, onRefreshQr }: {
   login: AgentLoginRequest;
   onSubmit: (answers: Record<string, unknown>) => void;
   onCancel: () => void;
   onSendCode: () => void;
   onRefreshCaptcha: () => void;
+  onRefreshQr: () => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [countdown, setCountdown] = useState(0);
@@ -532,6 +533,7 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha }: 
           >
             我已经完成扫码，继续
           </button>
+          <button onClick={onRefreshQr}>刷新二维码</button>
           <button onClick={onCancel}>取消登录</button>
         </div>
       </div>
@@ -1062,6 +1064,7 @@ export default function AgentPanel({
                 onCancel={() => void agent.cancelLogin()}
                 onSendCode={() => void agent.sendLoginCode()}
                 onRefreshCaptcha={() => void agent.refreshCaptcha()}
+                onRefreshQr={() => void agent.refreshQr()}
               />
             ) : null}
           </>

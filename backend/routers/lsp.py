@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import traceback
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
@@ -32,6 +33,9 @@ async def ws_lsp(websocket: WebSocket) -> None:
         await session.start()
         await session.pump()
     except WebSocketDisconnect:
+        pass
+    except asyncio.CancelledError:
+        # 浏览器/连接关闭导致 receive 被取消, 属正常断开, 不打印堆栈
         pass
     except Exception:
         traceback.print_exc()

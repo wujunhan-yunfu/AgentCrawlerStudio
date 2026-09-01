@@ -585,6 +585,30 @@ async def test_run_login_action_refresh_captcha():
         assert resp.status_code == 200
 
 
+async def test_run_login_action_refresh_qr():
+    from backend.services.agent.run_login import RunLoginManager
+    from backend.services.agent.session.event import EventHub
+
+    app = make_test_app()
+    run_login = RunLoginManager(EventHub())
+    app.state.run_login = run_login
+
+    from backend.services.agent.bridge import BrowserBridge
+
+    run_id = "runqr"
+    gate = run_login.new_gate(run_id, BrowserBridge(app.state.stream))
+    gate._payload = {"url": "http://login"}
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post(
+            f"/api/v1/run/{run_id}/login-action", json={"action": "refresh_qr"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+
 async def test_run_login_action_unknown():
     from backend.services.agent.run_login import RunLoginManager
     from backend.services.agent.session.event import EventHub

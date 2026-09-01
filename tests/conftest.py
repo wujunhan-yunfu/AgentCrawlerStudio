@@ -590,7 +590,7 @@ class FakeAgentManager:
     async def login_action(self, crawler_id, session_id, action):
         if session_id not in self.sessions:
             raise KeyError("会话不存在")
-        if action not in ("send_code", "refresh_captcha"):
+        if action not in ("send_code", "refresh_captcha", "refresh_qr"):
             raise ValueError(f"未知登录动作: {action}")
         return {"ok": True, "message": "done"}
 

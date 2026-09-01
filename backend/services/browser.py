@@ -451,6 +451,7 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
 
         from .crawler import CrawlerEnv
         from .sandbox import safe_builtins
+        from .agent.login import LoginCancelled
 
         class _OutputTee:
             """捕获 stdout/stderr 的同时实时转发给回调, 兼容 redirect_stdout 接口。"""
@@ -519,6 +520,10 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
             with redirect_stdout(out), redirect_stderr(out):
                 await self._exec_async(code, env)
             return {"ok": True, "output": out.getvalue(), "error": "", "saved": env_obj.saved_items()}
+        except LoginCancelled:
+            # 用户取消登录: 脚本立即终止, 返回明确结果而非异常堆栈
+            saved = env_obj.saved_items() if env_obj is not None else []
+            return {"ok": False, "output": out.getvalue(), "error": "用户取消登录", "saved": saved}
         except Exception:  # noqa: BLE001
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": traceback.format_exc(), "saved": saved}

@@ -254,6 +254,8 @@ async def run_login_action(request: Request, run_id: str, req: RunLoginActionReq
         result = await gate.send_code()
     elif req.action == "refresh_captcha":
         result = await gate.refresh_captcha()
+    elif req.action == "refresh_qr":
+        result = await gate.refresh_qr()
     else:
         raise HTTPException(status_code=400, detail=f"未知登录动作: {req.action}")
     return {"ok": result.get("ok", False), "message": result.get("message", "")}

@@ -18,6 +18,11 @@ import uuid
 from urllib.parse import urlsplit
 from typing import Any
 
+
+class LoginCancelled(Exception):
+    """用户取消登录: 脚本应立即终止, 由上层(run_code / Agent)转换为本次运行终止。"""
+
+
 LOGIN_ANALYZE_JS = r"""
 (() => {
     const q = s => Array.from(document.querySelectorAll(s));
@@ -113,6 +118,18 @@ _CAPTCHA_FAIL_KEYWORDS = (
 
 def _data_uri(data: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(data).decode()
+
+
+# 刷新二维码后把登录页切回「扫码登录」tab(部分站点默认停在账密/短信 tab)
+_QR_TAB_JS = r"""(() => {
+    const labels = ['扫码登录', '扫一扫', '二维码登录', '二维码', 'QR登录'];
+    for (const lb of labels) {
+        const el = Array.from(document.querySelectorAll('div,li,a,span,button,p')).find(
+            e => (e.textContent || '').trim() === lb && e.getBoundingClientRect().width > 0);
+        if (el) { el.click(); return true; }
+    }
+    return false;
+})()"""
 
 
 _LOGIN_TEXT_RE = re.compile(r"(登录|登入|sign\s*in|log\s*in|立即登录)", re.IGNORECASE)
@@ -507,6 +524,21 @@ class LoginGate:
             return _data_uri(data)
         except Exception:  # noqa: BLE001
             return None
+
+    async def refresh_qr(self) -> dict[str, Any]:
+        """刷新二维码: 重新加载当前登录页以生成新二维码(供 /agent/login-action 调用)。
+
+        部分站点扫码时间过长二维码会过期, 用户点击「刷新二维码」后重新加载登录页
+        (再切回扫码 tab), 并保持 QR 监听继续, 防止扫码超时。
+        """
+        r = await self.bridge.evaluate("location.reload(); true")
+        ok = bool(isinstance(r, dict) and r.get("ok"))
+        await asyncio.sleep(0.8)
+        await self.bridge.evaluate(_QR_TAB_JS)
+        msg = "二维码已刷新，请用最新二维码重新扫码" if ok else "二维码刷新失败"
+        await self._persist({"type": "login_action", "action": "refresh_qr", "ok": ok, "message": msg})
+        self.session.emit({"type": "login_action", "action": "refresh_qr", "ok": ok, "message": msg})
+        return {"ok": ok, "message": msg}
 
     # ---------------------------------------------------------- QR 监听
 

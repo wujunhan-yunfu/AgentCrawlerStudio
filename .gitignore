@@ -12,3 +12,4 @@ frontend/dist/
 # 代码辅助静态文件
 static
 tmp/*
+frontend/src/libApi.json

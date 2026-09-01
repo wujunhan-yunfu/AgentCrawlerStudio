@@ -371,8 +371,10 @@ def fake_bridge():
         def __init__(self):
             self.eval_result = {"ok": True, "item": {"v": "http://home"}}
             self.shot = b"img-bytes"
+            self.exprs = []
 
         async def evaluate(self, expr, timeout=10.0):
+            self.exprs.append(expr)
             return self.eval_result
 
         async def element_shot(self, selector):
@@ -427,6 +429,23 @@ async def test_gate_refresh_captcha(session, gate, fake_bridge):
     session.login = {"captcha": {"image_selector": ""}}
     res2 = await gate.refresh_captcha()
     assert res2["ok"] is False
+
+
+async def test_gate_refresh_qr(session, gate, fake_bridge):
+    session.login = {"url": "http://login"}
+    res = await gate.refresh_qr()
+    assert res["ok"] is True
+    assert "已刷新" in res["message"]
+    ev = [e for e in session.hub._buffer if e["type"] == "login_action"][-1]
+    assert ev["action"] == "refresh_qr"
+    assert "location.reload" in fake_bridge.exprs[0]
+
+
+async def test_gate_refresh_qr_fail(session, gate, fake_bridge):
+    fake_bridge.eval_result = {"ok": False, "error": "no page"}
+    res = await gate.refresh_qr()
+    assert res["ok"] is False
+    assert "失败" in res["message"]
 
 
 async def test_gate_captcha_image(session, gate, fake_bridge):

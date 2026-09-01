@@ -15,6 +15,7 @@ interface Props {
   onCornerResizeStart: (e: React.MouseEvent<HTMLDivElement>) => void;
   running: boolean;
   onRun: () => void;
+  onStop: () => void;
   onFormat: () => void;
   onOrganizeImports?: () => void;
   output: RunOutputLine[];
@@ -46,6 +47,7 @@ export default function OutputBar({
   onCornerResizeStart,
   running,
   onRun,
+  onStop,
   onFormat,
   onOrganizeImports,
   output,
@@ -218,8 +220,19 @@ export default function OutputBar({
               整理导入
             </button>
           ) : null}
-          <button className="primary" onClick={onRun} disabled={running}>
-            {running ? "执行中..." : "执行代码"}
+          <button
+            className={`primary ${running ? "run-stop" : ""}`}
+            onClick={running ? onStop : onRun}
+            title={running ? "停止执行" : undefined}
+          >
+            {running ? (
+              <>
+                <span className="run-stop-idle">执行中...</span>
+                <span className="run-stop-hover">停止执行</span>
+              </>
+            ) : (
+              "执行代码"
+            )}
           </button>
         </div>
       </div>

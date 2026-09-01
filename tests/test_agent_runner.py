@@ -528,6 +528,15 @@ async def test_login_action_refresh_captcha(manager):
     assert result["image"]
 
 
+async def test_login_action_refresh_qr(manager):
+    s = await manager.create_session(None, "T")
+    s.status = "waiting"
+    s.login = {"url": "http://login"}
+    result = await manager.login_action(None, s.id, "refresh_qr")
+    assert result["ok"] is True
+    assert "已刷新" in result["message"]
+
+
 async def test_login_action_no_login(manager):
     s = await manager.create_session(None, "T")
     with pytest.raises(ValueError):

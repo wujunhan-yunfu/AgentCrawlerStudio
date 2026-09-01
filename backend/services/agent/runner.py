@@ -408,6 +408,8 @@ class AgentManager:
             return await gate.send_code()
         if action == "refresh_captcha":
             return await gate.refresh_captcha()
+        if action == "refresh_qr":
+            return await gate.refresh_qr()
         raise ValueError(f"未知登录动作: {action}")
 
     async def login_answer(
