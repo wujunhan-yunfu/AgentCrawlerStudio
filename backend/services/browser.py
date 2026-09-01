@@ -20,6 +20,7 @@ from .capture import ScreenCapture
 from .cdp import CDPManager
 from .console import ConsoleChannel
 from .dom import DOMChannel
+from .input import InputInjector
 from .network import NetworkChannel
 from .storage import StorageChannel
 
@@ -43,6 +44,7 @@ class BrowserStream:
         self.network = NetworkChannel(self.cdp)
         self.dom = DOMChannel(self.cdp)
         self.storage = StorageChannel(self.cdp)
+        self.input = InputInjector(self)
         self.error: str | None = None
         self.started_at: float | None = None
         self.chrome_args: list[str] = []

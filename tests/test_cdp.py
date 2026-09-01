@@ -547,6 +547,27 @@ def test_stack_text(cdp_manager):
     assert text.count("\n") == 0
 
 
+def test_stack_text_truncates_pathological_stack(cdp_manager):
+    """超大 stackTrace(如百度验证页 8.5MB)必须被截断, 防止阻塞/CDP 断连。"""
+    from backend.services.cdp import CDPManager
+
+    frames = [
+        {"url": f"http://huge/{i}", "functionName": "f" * 100, "lineNumber": i, "columnNumber": 0}
+        for i in range(5000)
+    ]
+    text = CDPManager._stack_text({"callFrames": frames})
+    assert text is not None
+    assert "共省略" in text
+    assert len(text) < 32 * 1024
+
+
+def test_cdp_max_frame_is_raised():
+    """CDP 消息上限必须足够大, 避免 >8MB 消息触发 WebSocket 1009 断连。"""
+    from backend.services.cdp import _MAX_CDP_FRAME
+
+    assert _MAX_CDP_FRAME >= 64 * 1024 * 1024
+
+
 def test_remote_str():
     from backend.services.cdp import CDPManager
 

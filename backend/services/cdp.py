@@ -24,6 +24,11 @@ import websockets
 _MAX_SUB_QUEUE = 1000
 _MAX_HISTORY = 500
 _SCAN_INTERVAL = 1.0
+# 单条 CDP 消息上限: 某些页面(如百度安全验证)会输出 >8MB 的 console 消息
+# (巨大 stackTrace), 过小会触发 WebSocket 1009 断开, 导致会话消失/控制失效。
+_MAX_CDP_FRAME = 256 * 1024 * 1024
+_STACK_MAX_FRAMES = 100
+_STACK_MAX_CHARS = 16 * 1024
 
 EventHandler = Callable[[Any, str, dict[str, Any]], Awaitable[bool]]
 
@@ -293,7 +298,7 @@ class CDPManager:
         consumer = asyncio.create_task(self._process_session_events(session))
         reader: asyncio.Task | None = None
         try:
-            async with websockets.connect(ws_url, max_size=8 * 1024 * 1024) as ws:
+            async with websockets.connect(ws_url, max_size=_MAX_CDP_FRAME) as ws:
                 session.ws = ws
                 reader = asyncio.create_task(self._read_session(session))
                 try:
@@ -474,14 +479,20 @@ class CDPManager:
         frames = (stack or {}).get("callFrames") or []
         if not frames:
             return None
+        omitted = len(frames) - _STACK_MAX_FRAMES
         lines = []
-        for frame in frames:
+        for frame in frames[:_STACK_MAX_FRAMES]:
             url = frame.get("url") or "<anonymous>"
             func = frame.get("functionName") or "<anonymous>"
             line_no = (frame.get("lineNumber") or 0) + 1
             col_no = (frame.get("columnNumber") or 0) + 1
             lines.append(f"  at {func} ({url}:{line_no}:{col_no})")
-        return "\n".join(lines)
+        if omitted > 0:
+            lines.append(f"  ... 共省略 {omitted} 帧")
+        text = "\n".join(lines)
+        if len(text) > _STACK_MAX_CHARS:
+            text = text[:_STACK_MAX_CHARS] + "\n  ... 堆栈过长, 已截断"
+        return text
 
     @staticmethod
     def _remote_str(arg: dict[str, Any]) -> str:

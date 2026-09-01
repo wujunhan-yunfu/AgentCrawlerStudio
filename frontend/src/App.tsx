@@ -9,6 +9,7 @@ import LiveView from "./components/LiveView";
 import OutputBar from "./components/OutputBar";
 import Sidebar from "./components/Sidebar";
 import { useLiveStream } from "./hooks/useLiveStream";
+import { useRemoteControl } from "./hooks/useRemoteControl";
 import { useConsole } from "./hooks/useConsole";
 import { useProblems } from "./hooks/useProblems";
 import { useStatus } from "./hooks/useStatus";
@@ -52,6 +53,7 @@ export default function App() {
   const [model, setModel] = useState<monaco.editor.ITextModel | null>(null);
   const problems = useProblems(model);
   const { imgRef, connected, lagMs, fps, width, height } = useLiveStream();
+  const control = useRemoteControl();
   const consoleState = useConsole();
   const status = useStatus();
   const versions = useVersions(code, setCode);
@@ -407,6 +409,8 @@ export default function App() {
         highlight={highlight}
         maximized={liveMaximized}
         onToggle={() => setLiveMaximized((m) => !m)}
+        control={control}
+        running={running}
       />
       {runLogin ? (
         <RunLoginModal

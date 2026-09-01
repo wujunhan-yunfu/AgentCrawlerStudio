@@ -613,6 +613,7 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     from backend.routers import agent as agent_router
     from backend.routers import console as console_router
     from backend.routers import control as control_router
+    from backend.routers import input as input_router
     from backend.routers import lsp as lsp_router
     from backend.routers import stream as stream_router
     from backend.routers import versions as versions_router
@@ -630,6 +631,7 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     )
     app.include_router(console_router.router)
     app.include_router(control_router.router, prefix=cfg.api_prefix)
+    app.include_router(input_router.router, prefix=cfg.api_prefix)
     app.include_router(lsp_router.router, prefix=cfg.api_prefix)
     app.include_router(stream_router.router, prefix=cfg.api_prefix)
     app.include_router(agent_router.router, prefix=cfg.api_prefix)
