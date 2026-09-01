@@ -15,6 +15,54 @@ function icon(d: string) {
   );
 }
 
+function branch() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="22"
+      height="22"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="4.7" cy="12" r="1.3" />
+      <circle cx="4.7" cy="4" r="1.3" />
+      <circle cx="11.3" cy="4" r="1.3" />
+      <path d="M4.7 5.3v5.3" />
+      <path d="M6 12h4a1.3 1.3 0 0 0 1.3-1.3V7.3" />
+      <path d="M9.3 9.3l2-2 2 2" />
+    </svg>
+  );
+}
+
+function spider() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      width="22"
+      height="22"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.3 2.7v1.3l3.4 3.4" />
+      <path d="M1.7 6.3l1 1h4" />
+      <path d="M2.7 12.7v-1.4l4-4" />
+      <path d="M12.7 2.7v1.3l-3.4 3.4" />
+      <path d="M14.3 6.3l-1 1h-4" />
+      <path d="M13.3 12.7v-1.4l-4-4" />
+      <circle cx="8" cy="10" r="2.7" />
+      <circle cx="8" cy="6" r="1.35" />
+    </svg>
+  );
+}
+
 const ITEMS: Item[] = [
   {
     key: "code",
@@ -44,12 +92,12 @@ const ITEMS: Item[] = [
   {
     key: "agent",
     title: "爬虫 Agent",
-    icon: icon("M2 2h4v4H2V2zm4 4h4v4H6V6zm4-4h4v4h-4V2zm-4 8h4v4H6v-4zm-2 2H2v4h4v-4H4zm10-6h-1.5L12 7.5 10.5 6H9V5h1.5L12 3.5 13.5 5H15v1zm-1 3h1v4.5L13.5 13H9v-1h4v-1.5h1V9zm-8 2v1H4v1H2.5V11H1V9h1.5v2H6z"),
+    icon: spider(),
   },
   {
     key: "versions",
     title: "源码管理",
-    icon: icon("M7.2 1.6l-2.4.6v10.4l1.2.3v.8L3.3 13l2.7-.7v-1l2.4.6 2.4-.6v-1L9.6 10v-1l2.4.6v-1L9.6 8V7l2.4.6V6.6L9.6 6V5l2.4.6V4.6L9.6 4V3.4l2.4.6v-1L9.6 2.3v1.1L7.2 1.6zm.3 1.9l1.8.4v2.9L7.5 7.4V3.5zM4.8 3.4l1.8.4v2.4L4.8 6.6V3.4zm0 3.5l1.8.5v2.3L4.8 9.7V6.9zm2.7.7l1.8.5v2.3l-1.8.5V7.6z"),
+    icon: branch(),
   },
 ];
 

@@ -178,35 +178,51 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
         {commits.length === 0 ? (
           <div className="vc-empty">暂无提交</div>
         ) : (
-          <ul className="vc-commits">
-            {commits.map((c) => (
-              <li key={c.commit_id} className="vc-commit">
-                <div className="vc-commit-head">
-                  <span className="vc-commit-hash" title={c.commit_id}>
-                    {shortHash(c.commit_id)}
-                  </span>
-                  <span className="vc-commit-msg">{c.message}</span>
-                  <span className="oc-diff-stats">
-                    <span className="stat-add">+{c.stat.add}</span>
-                    <span className="stat-del">−{c.stat.del}</span>
-                  </span>
-                </div>
-                <div className="vc-commit-meta">
-                  {c.author || "unknown"} · {fmtTime(c.created_at)}
-                </div>
-                <div className="vc-commit-actions">
-                  <button className="vc-link" onClick={() => void toggleCommit(c)}>
-                    {expanded?.id === c.commit_id ? "收起差异" : "查看差异"}
-                  </button>
-                  <button className="vc-link" onClick={() => void doCheckout(c.commit_id)}>
-                    检出
-                  </button>
-                </div>
-                {expanded?.id === c.commit_id ? (
-                  <DiffBlock from={expanded.from} to={expanded.to} />
-                ) : null}
-              </li>
-            ))}
+          <ul className="vc-timeline">
+            {commits.map((c) => {
+              const isOpen = expanded?.id === c.commit_id;
+              return (
+                <li key={c.commit_id} className={`vc-tl-item${isOpen ? " open" : ""}`}>
+                  <span className="vc-tl-dot" title={shortHash(c.commit_id)} />
+                  <div className="vc-tl-card" onClick={() => void toggleCommit(c)}>
+                    <div className="vc-tl-title">
+                      <span className="vc-tl-chevron">▸</span>
+                      <span className="vc-tl-msg" title={c.message}>
+                        {c.message || "(无提交信息)"}
+                      </span>
+                      <span className="oc-diff-stats">
+                        <span className="stat-add">+{c.stat.add}</span>
+                        <span className="stat-del">−{c.stat.del}</span>
+                      </span>
+                    </div>
+                    <div className="vc-tl-meta">
+                      <span className="vc-tl-hash" title={c.commit_id}>
+                        {shortHash(c.commit_id)}
+                      </span>
+                      <span>{c.author || "unknown"}</span>
+                      <span>·</span>
+                      <span>{fmtTime(c.created_at)}</span>
+                    </div>
+                    {isOpen ? (
+                      <div className="vc-tl-body" onClick={(e) => e.stopPropagation()}>
+                        <div className="vc-tl-actions">
+                          <button
+                            className="vc-link"
+                            onClick={() => void doCheckout(c.commit_id)}
+                          >
+                            检出
+                          </button>
+                          <button className="vc-link" onClick={() => void toggleCommit(c)}>
+                            收起差异
+                          </button>
+                        </div>
+                        <DiffBlock from={expanded?.from ?? ""} to={expanded?.to ?? ""} />
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

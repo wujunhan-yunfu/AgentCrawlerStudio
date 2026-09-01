@@ -3301,6 +3301,135 @@ button.primary {
   color: var(--oc-text-muted);
 }
 
+/* 历史时间线 (VSCode Timeline 风格): 默认仅显示提交信息, 点击展开变更 */
+.vc-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.vc-tl-item {
+  position: relative;
+  padding-left: 20px;
+}
+
+.vc-tl-item::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--oc-border-subtle);
+}
+
+.vc-tl-item:first-child::before {
+  top: 9px;
+}
+
+.vc-tl-item:last-child::before {
+  bottom: calc(100% - 19px);
+}
+
+.vc-tl-dot {
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--oc-accent);
+  border: 2px solid var(--oc-panel);
+  z-index: 1;
+}
+
+.vc-tl-card {
+  margin: 0 8px 10px 0;
+  padding: 7px 10px;
+  background: var(--oc-element);
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.vc-tl-card:hover,
+.vc-tl-card.open {
+  border-color: var(--oc-accent);
+}
+
+.vc-tl-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vc-tl-chevron {
+  flex: none;
+  color: var(--oc-text-muted);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.vc-tl-item.open .vc-tl-chevron {
+  transform: rotate(90deg);
+}
+
+.vc-tl-msg {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--oc-text);
+}
+
+.vc-tl-title .oc-diff-stats {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+
+.vc-tl-title .stat-add {
+  color: var(--oc-success);
+}
+
+.vc-tl-title .stat-del {
+  color: var(--oc-diff-del);
+}
+
+.vc-tl-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--oc-text-muted);
+}
+
+.vc-tl-hash {
+  font-family: ui-monospace, monospace;
+  color: var(--oc-accent);
+}
+
+.vc-tl-body {
+  margin-top: 8px;
+  cursor: default;
+}
+
+.vc-tl-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
 .vc-repo {
   padding: 8px;
   display: flex;
