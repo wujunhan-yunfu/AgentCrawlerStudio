@@ -99,7 +99,32 @@ export interface RunStreamDone {
   ts: number;
 }
 
-export type RunStreamChunk = RunStreamStart | RunStreamStdout | RunStreamHeartbeat | RunStreamDone;
+export interface RunStreamRunLogin {
+  type: "run_login";
+  run_id: string;
+  request: RunLoginRequestData;
+}
+
+export interface RunStreamRunLoginSuccess {
+  type: "run_login_success";
+  run_id: string;
+  method?: string;
+  url?: string;
+}
+
+export interface RunStreamRunLoginTimeout {
+  type: "run_login_timeout";
+  run_id: string;
+}
+
+export type RunStreamChunk =
+  | RunStreamStart
+  | RunStreamStdout
+  | RunStreamHeartbeat
+  | RunStreamDone
+  | RunStreamRunLogin
+  | RunStreamRunLoginSuccess
+  | RunStreamRunLoginTimeout;
 
 /** 流式执行代码(SSE): 通过 onChunk 实时返回 stdout/心跳等事件, 结束时返回最终 RunResult。
  *  传入 signal 可在执行中主动中止(AbortError), 后端收到连接断开后取消对应运行任务。 */
@@ -178,16 +203,6 @@ export interface RunLoginRequestData {
   fields?: RunLoginField[];
   captcha?: RunLoginCaptcha;
   submit_label?: string;
-}
-
-export interface RunLoginResult {
-  run_id: string;
-  waiting: boolean;
-  request: RunLoginRequestData | null;
-}
-
-export function runLoginStatus(runId: string): Promise<RunLoginResult> {
-  return get(`/run/${runId}/login`);
 }
 
 export function runLoginAnswer(runId: string, answers: Record<string, unknown>): Promise<{ ok: boolean }> {

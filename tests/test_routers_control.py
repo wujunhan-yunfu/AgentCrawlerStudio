@@ -202,8 +202,86 @@ async def test_run_login_status_not_waiting(client):
     resp = await client.get("/api/v1/run/abc/login")
     assert resp.status_code == 200
     body = resp.json()
+    assert body["run_id"] == "abc"
     assert body["waiting"] is False
     assert body["request"] is None
+
+
+async def test_login_sse_event_conversion():
+    """登录协作事件 → SSE 事件转换: request 打包为 request, 超时/成功原样透传。"""
+    from backend.routers.control import _login_sse_event
+
+    ev = _login_sse_event({
+        "type": "run_login_request",
+        "run_id": "r1",
+        "qid": "q1",
+        "login_type": "qr",
+        "fields": [],
+        "captcha": {"type": "none"},
+    })
+    assert ev["type"] == "run_login"
+    assert ev["run_id"] == "r1"
+    assert ev["request"]["qid"] == "q1"
+    assert "type" not in ev["request"]
+    assert "run_id" not in ev["request"]
+
+    timeout = _login_sse_event({"type": "run_login_timeout", "run_id": "r1"})
+    assert timeout["type"] == "run_login_timeout"
+    assert timeout["run_id"] == "r1"
+
+    success = _login_sse_event({"type": "run_login_success", "run_id": "r1", "method": "qr", "url": "https://a"})
+    assert success["type"] == "run_login_success"
+    assert success["method"] == "qr"
+
+    assert _login_sse_event({"type": "whatever"}) == {}
+
+
+async def test_run_stream_pushes_login_request():
+    """脚本挂起 page_login 时, /run SSE 流实时推送 run_login 事件(无需轮询)。"""
+    import asyncio
+
+    from backend.services.agent.run_login import StandaloneLoginGate
+
+    class _LoginStream(FakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None):
+            if isinstance(login_gate, StandaloneLoginGate):
+                payload = {
+                    "qid": "q1",
+                    "login_type": "qr",
+                    "method": "qr",
+                    "url": "https://login",
+                    "zoom_browser": True,
+                    "message": "请扫码",
+                    "timeout": 60,
+                    "fields": [],
+                    "captcha": {"type": "none"},
+                    "submit_label": "登录",
+                }
+                task = asyncio.create_task(login_gate.request(payload))
+                for _ in range(50):
+                    if login_gate._future is not None:
+                        break
+                    await asyncio.sleep(0.01)
+                login_gate.answer({"cancelled": True})
+                await task
+            if on_output:
+                on_output("progress\n")
+            return {"ok": True, "output": "done", "error": "", "saved": []}
+
+    app = make_test_app(stream=_LoginStream())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post("/api/v1/run", json={"code": "x"})
+        chunks = await _run_chunks(resp)
+
+    login = [ch for ch in chunks if ch["type"] == "run_login"]
+    assert login
+    assert login[0]["request"]["qid"] == "q1"
+    assert login[0]["request"]["zoom_browser"] is True
+    assert chunks[0]["type"] == "start"
+    assert chunks[-1]["type"] == "done"
+    assert chunks[-1]["result"]["ok"] is True
 
 
 async def test_run_login_answer_no_gate(client):

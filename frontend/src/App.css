@@ -3090,43 +3090,78 @@ button.primary {
   color: var(--oc-diff-del-sign);
 }
 
-/* 独立运行 (编辑器 /run) 的登录引导弹窗 */
-.run-login-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-  padding: 16px;
-}
-
+/* 独立运行 (编辑器 /run) 的登录引导弹窗: 悬浮卡片, 不遮挡放大后的实时画面 */
 .run-login-card {
-  width: 360px;
-  max-width: 100%;
-  background: var(--oc-bg);
-  border: 1px solid var(--oc-accent);
-  border-radius: 4px;
-  padding: 16px 18px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  position: fixed;
+  z-index: 1001;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  background: rgba(22, 23, 28, 0.94);
+  backdrop-filter: blur(6px);
+  border: 1px solid #9d7cd8;
+  border-radius: 6px;
+  padding: 10px 14px 14px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
+  user-select: none;
 }
 
 .run-login-title {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 10px;
+  color: #eeeeee;
+  margin-bottom: 8px;
+  padding: 2px 0;
+  cursor: move;
+}
+
+.run-login-collapse {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e1e1e;
+  color: #9aa0a6;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.run-login-collapse:hover {
+  color: #ffffff;
+}
+
+/* 收起后的浮动按钮 */
+.run-login-collapsed {
+  position: fixed;
+  z-index: 1001;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #eeeeee;
+  background: #16171c;
+  border: 1px solid #9d7cd8;
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  user-select: none;
+}
+.run-login-collapsed:hover {
+  background: #1e1f26;
 }
 
 .run-login-hint {
-  color: var(--oc-text);
+  color: #eeeeee;
   font-size: 12px;
   line-height: 1.6;
   margin-bottom: 6px;
 }
 
 .run-login-hint.sub {
-  color: var(--oc-muted);
+  color: #9aa0a6;
 }
 
 .run-login-field {
@@ -3135,7 +3170,7 @@ button.primary {
 
 .run-login-label {
   font-size: 12px;
-  color: var(--oc-muted);
+  color: #9aa0a6;
   margin-bottom: 4px;
 }
 
@@ -3145,10 +3180,10 @@ button.primary {
   box-sizing: border-box;
   padding: 6px 8px;
   font-size: 13px;
-  border: 1px solid var(--oc-border-subtle);
+  border: 1px solid #3c3c3c;
   border-radius: 2px;
-  background: var(--oc-element);
-  color: var(--oc-text);
+  background: #1e1e1e;
+  color: #eeeeee;
 }
 
 .run-login-captcha-row {
@@ -3165,7 +3200,7 @@ button.primary {
   height: 34px;
   width: 96px;
   object-fit: cover;
-  border: 1px solid var(--oc-border-subtle);
+  border: 1px solid #3c3c3c;
   border-radius: 2px;
   cursor: pointer;
 }
@@ -3174,10 +3209,10 @@ button.primary {
   margin-top: 6px;
   padding: 4px 10px;
   font-size: 12px;
-  border: 1px solid var(--oc-border-subtle);
+  border: 1px solid #3c3c3c;
   border-radius: 2px;
-  background: var(--oc-element);
-  color: var(--oc-accent);
+  background: #1e1e1e;
+  color: #9d7cd8;
   cursor: pointer;
 }
 
@@ -3197,22 +3232,97 @@ button.primary {
 .run-login-actions button {
   padding: 6px 14px;
   font-size: 12px;
-  border: 1px solid var(--oc-border-subtle);
+  border: 1px solid #3c3c3c;
   border-radius: 2px;
-  background: var(--oc-element);
-  color: var(--oc-text);
+  background: #1e1e1e;
+  color: #eeeeee;
   cursor: pointer;
 }
 
+.run-login-actions button:hover {
+  background: #2a2a2e;
+}
+
 .run-login-actions button.primary {
-  background: var(--oc-accent);
+  background: #9d7cd8;
   color: #fff;
-  border-color: var(--oc-accent);
+  border-color: #9d7cd8;
+}
+.run-login-actions button.primary:hover {
+  background: #8a6cc9;
 }
 
 .run-login-actions button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Agent 模式: 画面放大时登录卡以浮窗呈现 (悬浮于放大画面上方) */
+.login-float-card {
+  position: fixed;
+  z-index: 1001;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  background: rgba(16, 16, 18, 0.94);
+  backdrop-filter: blur(6px);
+  border: 1px solid #9d7cd8;
+  border-radius: 6px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  overflow: hidden;
+}
+
+.login-float-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #eeeeee;
+  cursor: move;
+}
+
+.login-float-card .agent-card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 8px 14px 14px;
+}
+
+.login-float-collapse {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e1e1e;
+  color: #9aa0a6;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.login-float-collapse:hover {
+  color: #ffffff;
+}
+
+.login-float-pill {
+  position: fixed;
+  z-index: 1001;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: #eeeeee;
+  background: #16171c;
+  border: 1px solid #9d7cd8;
+  border-radius: 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  user-select: none;
+}
+.login-float-pill:hover {
+  background: #1e1f26;
 }
 
 /* ---------------- 源码管理面板 ---------------- */

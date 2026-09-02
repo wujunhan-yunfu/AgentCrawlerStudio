@@ -491,6 +491,10 @@ function QuestionForm({ questions, qid, onSubmit }: {
 
 /* ---------------- 登录引导表单 (page_login) ---------------- */
 
+const LOGIN_FLOAT_WIDTH = 380;
+const LOGIN_FLOAT_TOP_RATIO = 0.12;
+
+// zoom_browser 时画面会被放大盖满屏幕, 登录卡片以浮窗形式悬浮于放大画面之上, 可拖动/收起
 function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, onRefreshQr }: {
   login: AgentLoginRequest;
   onSubmit: (answers: Record<string, unknown>) => void;
@@ -502,6 +506,13 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [pos, setPos] = useState(() => ({
+    x: Math.max(8, Math.round((window.innerWidth - LOGIN_FLOAT_WIDTH) / 2)),
+    y: Math.max(8, Math.round(window.innerHeight * LOGIN_FLOAT_TOP_RATIO)),
+  }));
+  const posRef = useRef(pos);
+  posRef.current = pos;
 
   useEffect(() => {
     if (countdown <= 0) return;
@@ -509,10 +520,70 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
     return () => clearTimeout(t);
   }, [countdown]);
 
+  const floating = Boolean(login.zoom_browser);
+
+  const beginDrag = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!floating) return;
+    if ((e.target as HTMLElement).closest(".login-float-collapse")) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const start = { ...posRef.current };
+    document.body.style.cursor = "move";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      const x = Math.min(window.innerWidth - 90, Math.max(8, start.x + (ev.clientX - startX)));
+      const y = Math.min(window.innerHeight - 40, Math.max(8, start.y + (ev.clientY - startY)));
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const setVal = (key: string, v: unknown) => setValues((prev) => ({ ...prev, [key]: v }));
 
-  if (login.login_type === "qr") {
+  const wrap = (card: React.ReactNode) =>
+    floating ? (
+      <div className="login-float-card" style={{ left: pos.x, top: pos.y }}>
+        <div className="login-float-title" onMouseDown={beginDrag}>
+          <span>🔐 {login.login_type === "qr" ? "二维码登录" : "账号登录"}</span>
+          <button
+            className="login-float-collapse"
+            title="收起为浮动按钮(避免遮挡放大画面)"
+            onClick={() => setCollapsed(true)}
+          >
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M3 6l5 5 5-5" />
+            </svg>
+          </button>
+        </div>
+        {card}
+      </div>
+    ) : (
+      <>{card}</>
+    );
+
+  if (collapsed && floating) {
     return (
+      <button
+        className="login-float-pill"
+        style={{ left: pos.x, top: pos.y }}
+        title="展开登录面板"
+        onClick={() => setCollapsed(false)}
+      >
+        🔐 登录中 · 点击展开
+      </button>
+    );
+  }
+
+  if (login.login_type === "qr") {
+    return wrap(
       <div className="agent-card question-card login-card">
         <div className="agent-card-title">🔐 二维码登录</div>
         <div className="question-title">
@@ -536,11 +607,11 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
           <button onClick={onRefreshQr}>刷新二维码</button>
           <button onClick={onCancel}>取消登录</button>
         </div>
-      </div>
+      </div>,
     );
   }
 
-  return (
+  return wrap(
     <div className="agent-card question-card login-card">
       <div className="agent-card-title">🔐 账号登录</div>
       {(login.fields ?? []).map((f) => (
@@ -607,7 +678,7 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
         </button>
         <button onClick={onCancel}>取消登录</button>
       </div>
-    </div>
+    </div>,
   );
 }
 
@@ -1059,6 +1130,7 @@ export default function AgentPanel({
             ) : null}
             {agent.login ? (
               <LoginForm
+                key={agent.login.qid}
                 login={agent.login}
                 onSubmit={(answers) => void agent.submitLogin(answers)}
                 onCancel={() => void agent.cancelLogin()}

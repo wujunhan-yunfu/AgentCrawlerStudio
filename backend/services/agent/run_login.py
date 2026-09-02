@@ -47,6 +47,9 @@ class StandaloneLoginGate:
         # 独立运行时 run_code 在 worker 事件循环执行, 而 /run/*/login-answer 等
         # HTTP 处理器在主事件循环: 记录主循环用于跨线程安全投递。
         self._main_loop: asyncio.AbstractEventLoop | None = None
+        # 可选本地事件队列: /run SSE 流 attach 后, 登录事件同时推送到该队列,
+        # 前端无需轮询即可实时收到登录请求/超时/成功(替代 /run/{id}/login 轮询)。
+        self._local_q: asyncio.Queue | None = None
 
     # ---------------------------------------------------------- 交互主流程
 
@@ -80,15 +83,23 @@ class StandaloneLoginGate:
             self._payload = None
 
     def _emit(self, event: dict[str, Any]) -> None:
-        """事件总线是主事件循环侧的, 跨线程时安全投递。"""
+        """本地 SSE 队列与事件总线都在主事件循环侧, 跨线程时统一安全投递。"""
         if self._main_loop is not None:
             try:
                 cur = asyncio.get_running_loop()
             except RuntimeError:
                 cur = None
             if cur is not self._main_loop:
-                self._main_loop.call_soon_threadsafe(self.hub.emit, event)
+                self._main_loop.call_soon_threadsafe(self._deliver, event)
                 return
+        self._deliver(event)
+
+    def _deliver(self, event: dict[str, Any]) -> None:
+        if self._local_q is not None:
+            try:
+                self._local_q.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
         self.hub.emit(event)
 
     def _resolve_future(self, value: dict[str, Any]) -> None:
@@ -121,6 +132,10 @@ class StandaloneLoginGate:
     def payload(self) -> dict[str, Any] | None:
         return self._payload
 
+    def attach(self, q: asyncio.Queue) -> None:
+        """绑定本地事件队列(/run SSE 流), 登录事件同时推送到该队列。"""
+        self._local_q = q
+
     def cancel(self) -> None:
         self._resolve_future({"cancelled": True})
 
@@ -134,7 +149,7 @@ class StandaloneLoginGate:
         r = await self.bridge.evaluate(f"document.querySelector({sel!r})?.click(); true")
         ok = bool(isinstance(r, dict) and r.get("ok"))
         msg = "已触发发送验证码，请查看手机" if ok else f"触发失败: {r.get('error') if isinstance(r, dict) else '未知错误'}"
-        self.hub.emit({"type": "run_login_action", "run_id": self.run_id, "action": "send_code", "ok": ok, "message": msg})
+        self._emit({"type": "run_login_action", "run_id": self.run_id, "action": "send_code", "ok": ok, "message": msg})
         return {"ok": ok, "message": msg}
 
     async def refresh_captcha(self) -> dict[str, Any]:
@@ -145,7 +160,7 @@ class StandaloneLoginGate:
             await asyncio.sleep(0.6)
         image = await self._captcha_image()
         msg = "验证码已刷新" if image else "未找到图形验证码元素"
-        self.hub.emit({"type": "run_login_action", "run_id": self.run_id, "action": "refresh_captcha", "ok": bool(image), "message": msg})
+        self._emit({"type": "run_login_action", "run_id": self.run_id, "action": "refresh_captcha", "ok": bool(image), "message": msg})
         return {"ok": bool(image), "message": msg, "image": image}
 
     async def _captcha_image(self) -> str | None:
@@ -166,7 +181,7 @@ class StandaloneLoginGate:
         await asyncio.sleep(0.8)
         await self.bridge.evaluate(_QR_TAB_JS)
         msg = "二维码已刷新，请用最新二维码重新扫码" if ok else "二维码刷新失败"
-        self.hub.emit({"type": "run_login_action", "run_id": self.run_id, "action": "refresh_qr", "ok": ok, "message": msg})
+        self._emit({"type": "run_login_action", "run_id": self.run_id, "action": "refresh_qr", "ok": ok, "message": msg})
         return {"ok": ok, "message": msg}
 
     # ---------------------------------------------------------- QR 监听
@@ -193,4 +208,4 @@ class StandaloneLoginGate:
                 return
 
     async def finish(self, method: str, url: str) -> None:
-        self.hub.emit({"type": "run_login_success", "run_id": self.run_id, "method": method, "url": url})
+        self._emit({"type": "run_login_success", "run_id": self.run_id, "method": method, "url": url})

@@ -81,6 +81,21 @@ def _sse_event(obj: dict) -> str:
     return "data: " + json.dumps(obj, ensure_ascii=False) + "\n\n"
 
 
+def _login_sse_event(ev: dict) -> dict:
+    """把独立运行登录协作事件转成 SSE 事件(前端流式接收, 替代轮询)。
+
+    - run_login_request → {"type": "run_login", "request": <payload>}
+    - run_login_timeout / run_login_success → 原样透传
+    """
+    etype = ev.get("type")
+    if etype == "run_login_request":
+        payload = {k: v for k, v in ev.items() if k not in ("type", "run_id")}
+        return {"type": "run_login", "run_id": ev.get("run_id"), "request": payload}
+    if etype in ("run_login_timeout", "run_login_success"):
+        return dict(ev)
+    return {}
+
+
 @router.get("/status", response_model=StatusResult)
 async def status(request: Request) -> dict:
     return await _stream(request).status()
@@ -119,10 +134,13 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
       - data: {"type": "start", "run_id": ..., "ts": ...}       开始
       - data: {"type": "stdout", "data": "...", "ts": ...}      实时 stdout/stderr 输出
       - data: {"type": "heartbeat", "ts": ...}                  空闲保活(脚本挂起时保持连接)
+      - data: {"type": "run_login", "run_id": ..., "request": {...}} 登录请求(脚本挂起 page_login)
+      - data: {"type": "run_login_success", ...}                登录成功
+      - data: {"type": "run_login_timeout", ...}                二维码登录超时
       - data: {"type": "done", "result": {...}, "ts": ...}      最终结果
     text/event-stream 不会被浏览器/反向代理缓冲, 输出实时到达前端。
     脚本调用 page_login 时会挂起等待用户在实时画面扫码/填表,
-    前端通过 /run/{run_id}/login 轮询获取登录请求并提交答案。
+    登录请求/超时/成功通过本流实时推送, 前端无需轮询。
     """
     stream = _stream(request)
     run_id = (req.run_id or "").strip() or uuid.uuid4().hex[:12]
@@ -130,6 +148,8 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
     queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
     main_loop = asyncio.get_running_loop()
     login_gate._main_loop = main_loop
+    login_q: asyncio.Queue[dict] = asyncio.Queue()
+    login_gate.attach(login_q)
 
     # 用户代码在 worker 线程事件循环中执行, 阻塞调用不会拖垮主事件循环;
     # on_output 由 worker 线程回调, 通过 call_soon_threadsafe 安全投递到本循环。
@@ -142,12 +162,14 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
 
     async def event_stream():
         get_task: asyncio.Task | None = None
+        login_task: asyncio.Task | None = None
         try:
             yield _sse_event({"type": "start", "run_id": run_id, "ts": int(time.time() * 1000)})
             get_task = asyncio.ensure_future(queue.get())
+            login_task = asyncio.ensure_future(login_q.get())
             while True:
                 done_set, _ = await asyncio.wait(
-                    {get_task, run_task},
+                    {get_task, run_task, login_task},
                     timeout=_HEARTBEAT_INTERVAL,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
@@ -166,6 +188,10 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
                         while not queue.empty():
                             ts, data = queue.get_nowait()
                             yield _sse_event({"type": "stdout", "data": data, "ts": ts})
+                    while not login_q.empty():
+                        sse = _login_sse_event(login_q.get_nowait())
+                        if sse:
+                            yield _sse_event(sse)
                     try:
                         result = run_task.result()
                     except asyncio.CancelledError:
@@ -179,6 +205,12 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
                         }
                     yield _sse_event({"type": "done", "result": result, "ts": int(time.time() * 1000)})
                     return
+                if login_task in done_set:
+                    sse = _login_sse_event(login_task.result())
+                    if sse:
+                        yield _sse_event(sse)
+                    login_task = asyncio.ensure_future(login_q.get())
+                    continue
                 if get_task in done_set:
                     ts, data = get_task.result()
                     yield _sse_event({"type": "stdout", "data": data, "ts": ts})
@@ -191,6 +223,8 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
                 run_task.cancel()
             if get_task is not None and not get_task.done():
                 get_task.cancel()
+            if login_task is not None and not login_task.done():
+                login_task.cancel()
             _run_login(request).remove(run_id)
 
     return StreamingResponse(

@@ -130,6 +130,36 @@ async def test_gate_finish(hub, bridge):
     assert ev["url"] == "https://a.com"
 
 
+async def test_gate_attach_delivers_to_local_queue(hub, bridge):
+    """attach 的本地队列同步收到登录事件, 供 /run SSE 流实时转发。"""
+    gate = make_gate(hub, bridge)
+    q: asyncio.Queue = asyncio.Queue()
+    gate.attach(q)
+    payload = {"qid": "q1", "login_type": "account", "fields": []}
+    task = asyncio.create_task(gate.request(payload))
+    for _ in range(50):
+        if gate._future is not None:
+            break
+        await asyncio.sleep(0.01)
+    ev = await asyncio.wait_for(q.get(), timeout=1)
+    assert ev["type"] == "run_login_request"
+    assert ev["run_id"] == "rid1"
+    assert ev["qid"] == "q1"
+    gate.answer({"account": "x"})
+    await task
+
+
+async def test_gate_attach_local_queue_finish(hub, bridge):
+    gate = make_gate(hub, bridge)
+    q: asyncio.Queue = asyncio.Queue()
+    gate.attach(q)
+    await gate.finish("qr", "https://a.com")
+    ev = await asyncio.wait_for(q.get(), timeout=1)
+    assert ev["type"] == "run_login_success"
+    assert ev["run_id"] == "rid1"
+    assert ev["url"] == "https://a.com"
+
+
 # --------------------------------------------------------------------------- 登录动作
 
 

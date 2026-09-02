@@ -14,7 +14,7 @@ import { useConsole } from "./hooks/useConsole";
 import { useProblems } from "./hooks/useProblems";
 import { useStatus } from "./hooks/useStatus";
 import { useVersions } from "./hooks/useVersions";
-import { runCodeStream, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, runLoginStatus, type RunOutputLine, type SavedItem, type RunLoginRequestData } from "./utils/api";
+import { runCodeStream, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, type RunOutputLine, type SavedItem, type RunLoginRequestData } from "./utils/api";
 
 const OUTPUT_DEFAULT_HEIGHT = 300;
 const ACTIVITY_BAR_WIDTH = 48;
@@ -26,6 +26,9 @@ const COLLAPSE_THRESHOLD = 30;
 const MIN_EDITOR_WIDTH = 120;
 
 const PANEL_DEFAULT_WIDTH: Partial<Record<PanelKey, number>> = { agent: SIDEBAR_AGENT_WIDTH };
+
+const RUN_LOGIN_WIDTH = 380;
+const RUN_LOGIN_TOP_RATIO = 0.12;
 
 const DEFAULT_CODE = "";
 
@@ -145,7 +148,6 @@ export default function App() {
     setRunLogin(null);
     const id = `run_${Date.now().toString(36)}`;
     setRunId(id);
-    void pollRunLogin(id, abort.signal);
 
     // 冲刷未换行的半个输出行, 保证标记与输出顺序正确
     const flushPending = (ts: number) => {
@@ -168,6 +170,16 @@ export default function App() {
           addMarker({ marker: "start", ts: chunk.ts });
         } else if (chunk.type === "stdout") {
           appendOutput(chunk.data, chunk.ts);
+        } else if (chunk.type === "run_login") {
+          setRunLogin(chunk.request);
+          if (chunk.request.zoom_browser) setLiveMaximized(true);
+        } else if (chunk.type === "run_login_success") {
+          setRunLogin(null);
+          setLiveMaximized(false);
+        } else if (chunk.type === "run_login_timeout") {
+          setRunLogin(null);
+          setLiveMaximized(false);
+          setError("二维码登录超时, 已停止等待");
         } else if (chunk.type === "done") {
           flushPending(chunk.ts);
           addMarker({
@@ -195,22 +207,7 @@ export default function App() {
     }
   };
 
-  // 独立运行期间轮询登录请求: 脚本调用 page_login 时挂起, 前端据此展示登录框
-  const pollRunLogin = async (id: string, signal: AbortSignal) => {
-    try {
-      while (!signal.aborted) {
-        const r = await runLoginStatus(id);
-        if (r.waiting && r.request) {
-          setRunLogin(r.request);
-          if (r.request.zoom_browser) setLiveMaximized(true);
-        }
-        await new Promise((res) => setTimeout(res, 1500));
-      }
-    } catch {
-      /* 运行结束或后端不可用, 停止轮询 */
-    }
-  };
-
+  // 独立运行期间由 /run SSE 流实时推送登录请求: 脚本调用 page_login 时挂起, 前端据此展示登录框
   const handleRunLoginSubmit = async (answers: Record<string, unknown>) => {
     if (!runId) return;
     try {
@@ -414,6 +411,7 @@ export default function App() {
       />
       {runLogin ? (
         <RunLoginModal
+          key={runLogin.qid}
           login={runLogin}
           onSubmit={(a) => void handleRunLoginSubmit(a)}
           onCancel={() => void handleRunLoginSubmit({ cancelled: true })}
@@ -426,6 +424,7 @@ export default function App() {
   );
 }
 
+// 登录确认浮窗: 悬浮于放大画面之上, 可拖动/收起, 不遮挡二维码
 function RunLoginModal({
   login,
   onSubmit,
@@ -444,12 +443,43 @@ function RunLoginModal({
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [pos, setPos] = useState(() => ({
+    x: Math.max(8, Math.round((window.innerWidth - RUN_LOGIN_WIDTH) / 2)),
+    y: Math.max(8, Math.round(window.innerHeight * RUN_LOGIN_TOP_RATIO)),
+  }));
+  const posRef = useRef(pos);
+  posRef.current = pos;
 
   useEffect(() => {
     if (countdown <= 0) return;
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [countdown]);
+
+  // 拖动标题栏可移动浮窗, 便于把二维码让出来
+  const beginDrag = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest(".run-login-collapse")) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const start = { ...posRef.current };
+    document.body.style.cursor = "move";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => {
+      const x = Math.min(window.innerWidth - 90, Math.max(8, start.x + (ev.clientX - startX)));
+      const y = Math.min(window.innerHeight - 40, Math.max(8, start.y + (ev.clientY - startY)));
+      setPos({ x, y });
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const setVal = (key: string, v: unknown) => setValues((prev) => ({ ...prev, [key]: v }));
 
@@ -459,78 +489,99 @@ function RunLoginModal({
     setTimeout(() => setBusy(false), 500);
   };
 
-  if (login.login_type === "qr") {
+  const isQr = login.login_type === "qr";
+
+  if (collapsed) {
     return (
-      <div className="run-login-overlay">
-        <div className="run-login-card">
-          <div className="run-login-title">🔐 二维码登录</div>
-          <div className="run-login-hint">
-            {login.message ?? "请在放大后的浏览器实时画面中用手机 APP 扫码登录。"}
-          </div>
-          <div className="run-login-hint sub">系统已放大浏览器实时画面并持续监听登录跳转，扫码成功后脚本会自动继续。</div>
-          <div className="run-login-actions">
-            <button className="primary" disabled={busy} onClick={() => submit({ ok: true })}>
-              我已经完成扫码，继续
-            </button>
-            <button onClick={onRefreshQr}>刷新二维码</button>
-            <button onClick={onCancel}>取消登录</button>
-          </div>
-        </div>
-      </div>
+      <button
+        className="run-login-collapsed"
+        style={{ left: pos.x, top: pos.y }}
+        title="展开登录面板"
+        onClick={() => setCollapsed(false)}
+      >
+        🔐 登录中 · 点击展开
+      </button>
     );
   }
 
   return (
-    <div className="run-login-overlay">
-      <div className="run-login-card">
-        <div className="run-login-title">🔐 账号登录</div>
-        {(login.fields ?? []).map((f) => (
-          <div key={f.key} className="run-login-field">
-            <div className="run-login-label">{f.label}</div>
-            <input
-              type={f.input_type === "password" ? "password" : "text"}
-              value={(values[f.key] as string) ?? ""}
-              placeholder={f.placeholder || `请输入${f.label}`}
-              onChange={(e) => setVal(f.key, e.target.value)}
-            />
+    <div className="run-login-card" style={{ left: pos.x, top: pos.y }}>
+      <div className="run-login-title" onMouseDown={beginDrag}>
+        <span>🔐 {isQr ? "二维码登录" : "账号登录"}</span>
+        <button
+          className="run-login-collapse"
+          title="收起为浮动按钮(避免遮挡放大画面)"
+          onClick={() => setCollapsed(true)}
+        >
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+            <path d="M3 6l5 5 5-5" />
+          </svg>
+        </button>
+      </div>
+      {isQr ? (
+        <>
+          <div className="run-login-hint">
+            {login.message ?? "请在放大后的浏览器实时画面中用手机 APP 扫码登录。"}
           </div>
-        ))}
-        {login.captcha && login.captcha.type !== "none" ? (
-          <div className="run-login-field">
-            <div className="run-login-label">验证码</div>
-            <div className="run-login-captcha-row">
+          <div className="run-login-hint sub">系统已放大浏览器实时画面并持续监听登录跳转，扫码成功后脚本会自动继续。</div>
+        </>
+      ) : (
+        <>
+          {(login.fields ?? []).map((f) => (
+            <div key={f.key} className="run-login-field">
+              <div className="run-login-label">{f.label}</div>
               <input
-                type="text"
-                value={(values.captcha as string) ?? ""}
-                placeholder="请输入验证码"
-                onChange={(e) => setVal("captcha", e.target.value)}
+                type={f.input_type === "password" ? "password" : "text"}
+                value={(values[f.key] as string) ?? ""}
+                placeholder={f.placeholder || `请输入${f.label}`}
+                onChange={(e) => setVal(f.key, e.target.value)}
               />
-              {login.captcha.type === "image" && login.captcha.image ? (
-                <img
-                  className="run-login-captcha-img"
-                  src={login.captcha.image}
-                  alt="验证码"
-                  title="点击刷新"
-                  onClick={onRefreshCaptcha}
+            </div>
+          ))}
+          {login.captcha && login.captcha.type !== "none" ? (
+            <div className="run-login-field">
+              <div className="run-login-label">验证码</div>
+              <div className="run-login-captcha-row">
+                <input
+                  type="text"
+                  value={(values.captcha as string) ?? ""}
+                  placeholder="请输入验证码"
+                  onChange={(e) => setVal("captcha", e.target.value)}
                 />
+                {login.captcha.type === "image" && login.captcha.image ? (
+                  <img
+                    className="run-login-captcha-img"
+                    src={login.captcha.image}
+                    alt="验证码"
+                    title="点击刷新"
+                    onClick={onRefreshCaptcha}
+                  />
+                ) : null}
+              </div>
+              {login.captcha.type === "sms" ? (
+                <button className="run-login-send-code" disabled={countdown > 0} onClick={() => { setCountdown(60); onSendCode(); }}>
+                  {countdown > 0 ? `${countdown}s 后重发` : "发送验证码"}
+                </button>
+              ) : null}
+              {login.captcha.type === "image" ? (
+                <button className="run-login-send-code" onClick={onRefreshCaptcha}>换一张</button>
               ) : null}
             </div>
-            {login.captcha.type === "sms" ? (
-              <button className="run-login-send-code" disabled={countdown > 0} onClick={() => { setCountdown(60); onSendCode(); }}>
-                {countdown > 0 ? `${countdown}s 后重发` : "发送验证码"}
-              </button>
-            ) : null}
-            {login.captcha.type === "image" ? (
-              <button className="run-login-send-code" onClick={onRefreshCaptcha}>换一张</button>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="run-login-actions">
+          ) : null}
+        </>
+      )}
+      <div className="run-login-actions">
+        {isQr ? (
+          <button className="primary" disabled={busy} onClick={() => submit({ ok: true })}>
+            我已经完成扫码，继续
+          </button>
+        ) : (
           <button className="primary" disabled={busy} onClick={() => submit(values)}>
             {login.submit_label ? `提交${login.submit_label}` : "提交登录"}
           </button>
-          <button onClick={onCancel}>取消登录</button>
-        </div>
+        )}
+        {isQr ? <button onClick={onRefreshQr}>刷新二维码</button> : null}
+        <button onClick={onCancel}>取消登录</button>
       </div>
     </div>
   );
