@@ -18,7 +18,7 @@ export default function StatusPanel({ status }: { status: Status | null }) {
             抓屏: {dot(Boolean(m?.running))} {m?.fps ? ` ${m.fps} fps` : ""}
           </div>
           <div>
-            观看数: {m?.viewers ?? "-"} | 已推帧: {m?.frames_total ?? "-"}
+            已推帧: {m?.frames_total ?? "-"}
           </div>
           <div>末帧延迟: {m?.last_frame_age_ms != null ? `${m.last_frame_age_ms} ms` : "-"}</div>
           {status.error && <div className="bad">错误: {status.error}</div>}

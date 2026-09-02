@@ -9,6 +9,10 @@ interface Props {
   fps: number | null;
   hasBrowser: boolean;
   connecting: boolean;
+  /** 已停止自动重连(取消连接或被接管) */
+  stopped: boolean;
+  /** 被其他窗口接管 */
+  kicked: boolean;
   width: number;
   height: number;
   highlight: HighlightBox | null;
@@ -53,7 +57,7 @@ function mods(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey
 }
 
 export default function LiveView({
-  imgRef, connected, lagMs, fps, hasBrowser, connecting, width, height,
+  imgRef, connected, lagMs, fps, hasBrowser, connecting, stopped, kicked, width, height,
   highlight, maximized, onToggle, control, running,
 }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -271,6 +275,7 @@ export default function LiveView({
         className={`live-window${maximized ? " maximized" : ""}`}
         onClick={() => {
           if (!maximized) onToggle();
+          else if (!controlActive) onToggle();
         }}
         title={maximized ? undefined : "点击放大"}
       >
@@ -298,11 +303,14 @@ export default function LiveView({
             <div className="live-toolbar">
               <button
                 title={controlOn ? "关闭远程控制" : "开启远程控制"}
-                onClick={() => setControlOn((v) => !v)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setControlOn((v) => !v);
+                }}
               >
                 {controlOn ? "🖱" : "🚫"}
               </button>
-              <button title="点击缩小" onClick={onToggle}>
+              <button title="点击缩小" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
                 ⤡
               </button>
             </div>
@@ -330,7 +338,7 @@ export default function LiveView({
             </div>
           ) : null}
           <div className="live-stats">
-            <span className={connected ? "ok" : "bad"}>{connected ? "实时画面" : "重连中..."}</span>
+            <span className={connected ? "ok" : stopped ? "bad" : undefined}>{connected ? "实时画面" : kicked ? "已被其他窗口接管" : stopped ? "未连接" : "重连中..."}</span>
             <span>延迟 {lagMs != null ? `${Math.round(lagMs)} ms` : "-"}</span>
             <span>{fps != null ? `${Math.round(fps)} fps` : "-"}</span>
             {controlActive ? <span className="ok">可操控</span> : null}

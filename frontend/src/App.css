@@ -3257,6 +3257,90 @@ button.primary {
   cursor: not-allowed;
 }
 
+/* 单连接冲突弹窗: 新窗口检测到已有连接时的选择(取消 / 接管原连接) */
+.conflict-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.conflict-card {
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background: rgba(28, 29, 34, 0.97);
+  backdrop-filter: blur(6px);
+  border: 1px solid #9d7cd8;
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  padding: 16px 18px;
+  user-select: none;
+}
+
+.conflict-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #eeeeee;
+  margin-bottom: 10px;
+}
+
+.conflict-body {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #bbbbbb;
+  margin-bottom: 16px;
+}
+
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.conflict-actions button {
+  padding: 6px 14px;
+  font-size: 12px;
+  border: 1px solid #3c3c3c;
+  border-radius: 2px;
+  background: #1e1e1e;
+  color: #eeeeee;
+  cursor: pointer;
+}
+
+.conflict-actions button:hover {
+  background: #2a2a2e;
+}
+
+.conflict-actions button.primary {
+  background: #9d7cd8;
+  color: #fff;
+  border-color: #9d7cd8;
+}
+.conflict-actions button.primary:hover {
+  background: #8a6cc9;
+}
+
+/* 被其他窗口接管后的顶部提示条 */
+.kicked-banner {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9700;
+  padding: 7px 16px;
+  font-size: 12px;
+  color: #ffd7d7;
+  background: rgba(90, 30, 30, 0.92);
+  border: 1px solid #d16969;
+  border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  user-select: none;
+}
+
 /* Agent 模式: 画面放大时登录卡以浮窗呈现 (悬浮于放大画面上方) */
 .login-float-card {
   position: fixed;

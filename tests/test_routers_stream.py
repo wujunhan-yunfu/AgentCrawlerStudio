@@ -58,6 +58,159 @@ async def test_ws_live_frame_push():
         task.cancel()
 
 
+async def test_ws_live_second_conn_conflict_cancel():
+    """已有连接时新窗口收到 conflict; 选择取消则新连接关闭, 原连接保持。"""
+    from backend.routers.stream import ws_live
+
+    app = make_test_app()
+    ws1 = FakeWS(app=app)
+    t1 = asyncio.create_task(ws_live(ws1))
+    try:
+        await asyncio.sleep(0.05)
+        assert json.loads(ws1.sent[0])["type"] == "hello"
+
+        ws2 = FakeWS(app=app)
+        t2 = asyncio.create_task(ws_live(ws2))
+        try:
+            await asyncio.sleep(0.05)
+            assert json.loads(ws2.sent[0])["type"] == "conflict"
+
+            ws2.put_text(json.dumps({"type": "cancel"}))
+            for _ in range(50):
+                if t2.done():
+                    break
+                await asyncio.sleep(0.05)
+            assert t2.done()  # 取消后本连接退出
+            assert not t1.done()  # 原连接保持推流
+        finally:
+            t2.cancel()
+    finally:
+        t1.cancel()
+
+
+async def test_ws_live_second_conn_conflict_kick():
+    """已有连接时新窗口收到 conflict; 选择接管则原连接收到 kicked 并退出, 新连接接管。可能接管原连接"""
+    from backend.routers.stream import ws_live
+
+    app = make_test_app()
+    ws1 = FakeWS(app=app)
+    t1 = asyncio.create_task(ws_live(ws1))
+    try:
+        await asyncio.sleep(0.05)
+        assert json.loads(ws1.sent[0])["type"] == "hello"
+
+        ws2 = FakeWS(app=app)
+        t2 = asyncio.create_task(ws_live(ws2))
+        try:
+            await asyncio.sleep(0.05)
+            assert json.loads(ws2.sent[0])["type"] == "conflict"
+
+            ws2.put_text(json.dumps({"type": "kick"}))
+            for _ in range(50):
+                if t1.done():
+                    break
+                await asyncio.sleep(0.05)
+            assert any(
+                isinstance(m, str) and json.loads(m).get("type") == "kicked"
+                for m in ws1.sent
+            )
+            assert t1.done()  # 原连接被接管
+            assert not t2.done()  # 新连接接管
+            await asyncio.sleep(0.05)
+            assert any(
+                isinstance(m, str) and json.loads(m).get("type") == "hello"
+                for m in ws2.sent
+            )
+            assert any(isinstance(m, bytes) for m in ws2.sent)  # 开始推帧
+        finally:
+            t2.cancel()
+    finally:
+        t1.cancel()
+
+
+async def test_ws_live_conflict_then_original_disconnects_takeover():
+    """冲突期间原连接断开, 新连接 kick 后可直接接管。"""
+    from backend.routers.stream import ws_live
+
+    app = make_test_app()
+    ws1 = FakeWS(app=app)
+    t1 = asyncio.create_task(ws_live(ws1))
+    try:
+        await asyncio.sleep(0.05)
+
+        ws2 = FakeWS(app=app)
+        t2 = asyncio.create_task(ws_live(ws2))
+        await asyncio.sleep(0.05)
+        assert json.loads(ws2.sent[0])["type"] == "conflict"
+
+        t1.cancel()  # 原连接先行断开
+        await asyncio.sleep(0.05)
+
+        ws2.put_text(json.dumps({"type": "kick"}))
+        await asyncio.sleep(0.05)
+        assert not t2.done()  # 原连接已断开, 本连接直接接管
+        assert any(isinstance(m, bytes) for m in ws2.sent)
+    finally:
+        t1.cancel()
+        t2.cancel()
+
+
+async def test_ws_live_same_client_reconnect_no_conflict():
+    """同一页面刷新重连(client_id 相同): 静默接管, 不再弹冲突提示。"""
+    from backend.routers.stream import ws_live
+
+    app = make_test_app()
+    ws1 = FakeWS(app=app, query_params={"client_id": "tab-1"})
+    t1 = asyncio.create_task(ws_live(ws1))
+    try:
+        await asyncio.sleep(0.05)
+        assert json.loads(ws1.sent[0])["type"] == "hello"
+
+        ws2 = FakeWS(app=app, query_params={"client_id": "tab-1"})
+        t2 = asyncio.create_task(ws_live(ws2))
+        try:
+            await asyncio.sleep(0.05)
+            assert not any(
+                isinstance(m, str) and json.loads(m).get("type") == "conflict"
+                for m in ws2.sent
+            )
+            assert json.loads(ws2.sent[0])["type"] == "hello"
+            for _ in range(50):
+                if t1.done():
+                    break
+                await asyncio.sleep(0.05)
+            assert t1.done()  # 原连接被静默接管后退出
+            assert any(
+                isinstance(m, str) and json.loads(m).get("type") == "kicked"
+                for m in ws1.sent
+            )
+        finally:
+            t2.cancel()
+    finally:
+        t1.cancel()
+
+
+async def test_ws_live_client_disconnect_releases_hub():
+    """页面关闭(客户端断开)后连接立即释放, 重新打开不再弹冲突。"""
+    from backend.routers.stream import ws_live
+
+    app = make_test_app()
+    ws1 = FakeWS(app=app)
+    ws1.disconnect_on_recv = True  # 模拟页面关闭
+    t1 = asyncio.create_task(ws_live(ws1))
+    await asyncio.sleep(0.05)
+    assert t1.done()  # 断开被立即检测, 连接释放
+
+    ws2 = FakeWS(app=app)
+    t2 = asyncio.create_task(ws_live(ws2))
+    try:
+        await asyncio.sleep(0.05)
+        assert not t2.done()
+        assert json.loads(ws2.sent[0])["type"] == "hello"  # 直接建立, 无冲突
+    finally:
+        t2.cancel()
+
+
 # --------------------------------------------------------------------------- /ws/console 等
 
 

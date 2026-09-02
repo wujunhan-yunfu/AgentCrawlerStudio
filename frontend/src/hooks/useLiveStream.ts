@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../utils/api";
+import { api, pageClientId } from "../utils/api";
 
 export interface LiveState {
   imgRef: React.RefObject<HTMLImageElement>;
@@ -8,6 +8,13 @@ export interface LiveState {
   fps: number | null;
   width: number;
   height: number;
+  /** 后端检测到已有连接, 等待用户决定取消或接管原连接 */
+  conflict: boolean;
+  /** 本窗口被其他窗口接管 */
+  kicked: boolean;
+  /** 已停止自动重连(取消连接或被接管) */
+  stopped: boolean;
+  resolveConflict: (decision: "cancel" | "kick") => void;
 }
 
 export function useLiveStream(): LiveState {
@@ -17,12 +24,17 @@ export function useLiveStream(): LiveState {
   const [fps, setFps] = useState<number | null>(null);
   const [width, setWidth] = useState(1280);
   const [height, setHeight] = useState(800);
+  const [conflict, setConflict] = useState(false);
+  const [kicked, setKicked] = useState(false);
+  const [stopped, setStopped] = useState(false);
 
   const clockOffsetRef = useRef(0);
   const haveOffsetRef = useRef(false);
   const lastFrameArriveRef = useRef(performance.now());
   const lastFrameSeenRef = useRef(0);
   const pendingRevokeRef = useRef<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const giveUpRef = useRef(false);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -31,8 +43,11 @@ export function useLiveStream(): LiveState {
     const img = imgRef.current;
 
     const connect = () => {
+      if (giveUpRef.current) return;
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}${api("/ws/live")}`);
+      const q = `?client_id=${encodeURIComponent(pageClientId())}`;
+      ws = new WebSocket(`${proto}://${location.host}${api(`/ws/live${q}`)}`);
+      wsRef.current = ws;
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => setConnected(true);
@@ -46,6 +61,23 @@ export function useLiveStream(): LiveState {
               width?: number;
               height?: number;
             };
+            if (m.type === "conflict") {
+              setConnected(false);
+              setConflict(true);
+              return;
+            }
+            if (m.type === "kicked") {
+              setKicked(true);
+              setStopped(true);
+              giveUpRef.current = true;
+              setConnected(false);
+              try {
+                ws?.close();
+              } catch {
+                /* ignore */
+              }
+              return;
+            }
             if (m.type === "hello") {
               clockOffsetRef.current = (m.server_time ?? 0) - Date.now() / 1000;
               haveOffsetRef.current = true;
@@ -87,7 +119,7 @@ export function useLiveStream(): LiveState {
 
       ws.onclose = () => {
         setConnected(false);
-        if (!closed) {
+        if (!closed && !giveUpRef.current) {
           retryTimer = window.setTimeout(connect, 1000);
         }
       };
@@ -112,5 +144,32 @@ export function useLiveStream(): LiveState {
     };
   }, []);
 
-  return { imgRef, connected, lagMs, fps, width, height };
+  const resolveConflict = (decision: "cancel" | "kick") => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    setConflict(false);
+    if (decision === "cancel") {
+      giveUpRef.current = true;
+      setStopped(true);
+      try {
+        ws.send(JSON.stringify({ type: "cancel" }));
+      } catch {
+        /* ignore */
+      }
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        ws.send(JSON.stringify({ type: "kick" }));
+      } catch {
+        /* ignore */
+      }
+      setConnected(true);
+    }
+  };
+
+  return { imgRef, connected, lagMs, fps, width, height, conflict, kicked, stopped, resolveConflict };
 }

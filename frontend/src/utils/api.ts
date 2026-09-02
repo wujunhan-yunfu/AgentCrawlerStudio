@@ -4,6 +4,29 @@ export function api(path: string): string {
   return `${API_PREFIX}${path}`;
 }
 
+/** 当前页面的连接标识: 存于 sessionStorage, 刷新重载保持不变; 关闭页面/新开窗口则为新标识。 */
+export function pageClientId(): string {
+  const KEY = "acs_page_client_id";
+  let id: string | null = null;
+  try {
+    id = sessionStorage.getItem(KEY);
+  } catch {
+    /* ignore */
+  }
+  if (!id) {
+    id =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    try {
+      sessionStorage.setItem(KEY, id);
+    } catch {
+      /* ignore */
+    }
+  }
+  return id;
+}
+
 export interface SavedItem {
   id: string;
   kind: "page" | "content" | "img";

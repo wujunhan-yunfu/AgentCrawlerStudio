@@ -55,7 +55,7 @@ export default function App() {
   const pendingOutputRef = useRef("");
   const [model, setModel] = useState<monaco.editor.ITextModel | null>(null);
   const problems = useProblems(model);
-  const { imgRef, connected, lagMs, fps, width, height } = useLiveStream();
+  const { imgRef, connected, lagMs, fps, width, height, conflict, kicked, stopped, resolveConflict } = useLiveStream();
   const control = useRemoteControl();
   const consoleState = useConsole();
   const status = useStatus();
@@ -72,6 +72,11 @@ export default function App() {
     }, 800);
     return () => clearTimeout(t);
   }, [code]);
+
+  // 连接被接管或取消后自动关闭放大的实时画面, 避免整页黑屏/无法操作
+  useEffect(() => {
+    if (kicked || stopped) setLiveMaximized(false);
+  }, [kicked, stopped]);
 
   // Agent 每次 set_editor_code: 立即同步编辑器(差异由 Agent 面板按会话内联展示)
   const handleAgentCode = (agentCode: string) => {
@@ -391,7 +396,6 @@ export default function App() {
         <span className={status?.xvfb ? "ok" : "bad"}>Xvfb ●</span>
         <span className={status?.chrome ? "ok" : "bad"}>Chrome ●</span>
         <span>抓屏 {status?.capture?.fps ?? "-"} fps</span>
-        <span>观看 {status?.capture?.viewers ?? "-"}</span>
         <span style={{ marginLeft: "auto" }}>末帧延迟 {status?.capture?.last_frame_age_ms != null ? `${status.capture.last_frame_age_ms} ms` : "-"}</span>
       </footer>
       <LiveView
@@ -401,6 +405,8 @@ export default function App() {
         fps={fps}
         hasBrowser={hasBrowser}
         connecting={status === null}
+        stopped={stopped}
+        kicked={kicked}
         width={width}
         height={height}
         highlight={highlight}
@@ -420,6 +426,19 @@ export default function App() {
           onRefreshQr={() => void handleRunLoginAction("refresh_qr")}
         />
       ) : null}
+      {conflict ? (
+        <div className="conflict-backdrop">
+          <div className="conflict-card">
+            <div className="conflict-title">已有连接</div>
+            <div className="conflict-body">本平台仅支持一个窗口连接，检测到已有其他窗口正在使用。是否由本窗口接管连接，并结束原窗口的连接？</div>
+            <div className="conflict-actions">
+              <button className="primary" onClick={() => resolveConflict("kick")}>接管连接</button>
+              <button onClick={() => resolveConflict("cancel")}>取消</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {kicked ? <div className="kicked-banner">连接已由其他窗口接管，本窗口已断开。刷新页面可重新连接。</div> : null}
     </div>
   );
 }
