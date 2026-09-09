@@ -4,14 +4,14 @@
 
 **Xvfb 虚拟显示器 + 有头 Chrome 真实窗口 + Pillow 抓屏，通过 WebSocket 推流的浏览器远程控制台**
 
-无 ffmpeg 依赖 · 亚 20ms 端到端延迟 · 内置 Playwright / Pyright LSP / 爬虫 Agent
+无 ffmpeg 依赖 · 亚 20ms 端到端延迟 · 实时画面可直接鼠标/键盘远程操控 · 内置 Playwright / Pyright LSP / 源码版本管理 / 爬虫 Agent
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.141%2B-009688)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
 ![WebSocket](https://img.shields.io/badge/Transport-WebSocket-purple)
 ![No ffmpeg](https://img.shields.io/badge/No%20dependency-ffmpeg-red)
-![Tests](https://img.shields.io/badge/Tests-~560%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-~660%20passing-brightgreen)
 
 </div>
 
@@ -20,8 +20,10 @@
 一个把 **真实浏览器窗口**（含标签栏 / 地址栏）以**毫秒级延迟**实时推送到网页的控制台项目：
 
 - Xvfb 虚拟显示器上运行**有头 Chrome**，Pillow 直接抓取屏幕并 JPEG 编码，经 WebSocket 推流——**全程不依赖 ffmpeg**。
-- 内置 **Playwright 代码编辑器**（Monaco + Pyright LSP），可直接写脚本控制浏览器，实时看到画面与效果。
+- 放大悬浮实时画面即可**直接以鼠标 / 滚轮 / 键盘远程操控**这台真实浏览器（支持中文输入），无需编写任何代码。
+- 内置 **Playwright 代码编辑器**（Monaco + Pyright LSP），可直接写脚本控制浏览器，执行过程 **stdout 流式回显**、可随时**停止执行**。
 - 内置 **DevTools 风格面板**（Console / Elements / Network / Application）。
+- 内置 **源码版本管理**：编辑器代码按 `crawler_id` 提交 / 历史 / 检出（MongoDB 持久化），未提交草稿自动三方合并。
 - 内置 **爬虫 Agent**（LangChain + DeepAgents），会话式多轮对话，自动编写并交付爬虫脚本。
 
 ## 📑 目录
@@ -41,6 +43,8 @@
   - [Playwright 代码控制](#playwright-代码控制)
   - [爬虫编码器内置函数](#爬虫编码器内置函数)
   - [登录凭据复用](#登录凭据复用)
+  - [浏览器远程控制](#浏览器远程控制)
+  - [源码版本管理](#源码版本管理)
   - [爬虫 Agent](#爬虫-agent)
 - [🧪 测试](#-测试)
 - [❓ 常见问题](#-常见问题)
@@ -52,43 +56,51 @@
 | 能力 | 说明 |
 |------|------|
 | **毫秒级实时画面** | 30fps 连续抓屏 + WebSocket 推送最新帧，静态页末帧延迟稳定在 ~20ms |
+| **画面远程操控** | 放大悬浮画面后，鼠标 / 滚轮 / 键盘 / 中文输入直接驱动真实浏览器（CDP Input 注入），无需写代码 |
+| **单窗口独占连接** | 实时画面**同一时刻仅允许一个窗口**连接观看与操控；第二个窗口连入会弹窗"接管 / 取消" |
 | **无 ffmpeg 依赖** | Pillow `ImageGrab` 直读 X11 屏幕，JPEG 编码单帧 ~25ms，全异步不阻塞 |
-| **真实浏览器窗口** | 有头 Chrome（含地址栏 / 标签栏）渲染在画面上，每次执行代码自动重启全新浏览器 |
-| **Playwright 控制台** | Monaco 编辑器 + `Ctrl+Enter` 执行，预置 `page` / `context` / `browser` |
+| **真实浏览器窗口** | 有头 Chrome（含地址栏 / 标签栏）渲染在画面上；导航 / 远程操控 / DevTools 共用**同一常驻窗口**，执行代码时自动重启**全新浏览器**（全新临时配置目录） |
+| **Playwright 控制台** | Monaco 编辑器 + 输出栏"执行代码"（或 `Ctrl+Enter`）运行，预置 `page` / `context` / `browser`；stdout **SSE 流式回显**（带时间戳 + 闪烁光标），执行中可一键**停止执行** |
 | **Pyright LSP** | 内联类型推断 / 补全 / 悬停 / 定义跳转 / 诊断，等价 Pylance 精度 |
 | **DevTools 面板** | Console / Elements / Network / Application 四个面板贴近 Chrome DevTools |
 | **代码辅助** | black 格式化、isort 整理导入、auto-import 快速修复、inlay hints |
+| **源码版本管理** | 编辑器代码按 `crawler_id` 提交 / 历史 / 检出（MongoDB 持久化提交），未提交草稿存于浏览器 localStorage，刷新时与远端变更自动三方合并 |
 | **爬虫 Agent** | 会话式多轮对话，自动规划 → 调试 → 写回脚本，支持交互式登录 |
 | **登录凭据复用** | ticket 按 host + crawler_id 存 MongoDB，登录一次自动复用 |
 
 ## 🖼️ 界面预览
 
-> 页面为 VSCode 风格布局：左侧活动栏 → Monaco 代码编辑器 → 底部输出栏（问题 / 输出 / DevTools）/ 状态栏（Xvfb / Chrome / 帧率 / 观看数 / 末帧延迟），右上角悬浮真实 Chrome 实时画面。
+> 页面为 VSCode 风格布局：左侧活动栏 → 侧边面板 / Monaco 代码编辑器 → 底部输出栏（输出 / 问题 / 浏览器控制台）/ 底部状态栏（Xvfb / Chrome / 抓屏帧率 / 末帧延迟），右上角悬浮真实 Chrome 实时画面（点击放大后可直接操控）。
 
 ![主界面](docs/mainpage.png)
 
 ## 🏗️ 架构
 
 ```
-+-----------+    X11    +----------------+               +-----------+
-|   Xvfb    |<----------| Chrome(有头)    |  <---CDP----  | Playwright|
-| :99 虚拟屏 |           | 真实窗口含顶栏  |  (ws 9222)     | (控制)    |
-+-----+-----+           +----------------+               +-----------+
-      ^ Pillow ImageGrab (XGetImage 直读)
-      |
-      v JPEG 编码 (Pillow, ~25ms/帧)
-+--------------------+
-| FastAPI WebSocket  |--- /ws/live ---> 浏览器实时画面
-| 扇出(仅最新帧)      |   二进制: 时间戳+JPEG
-+--------------------+
++-----------+    X11    +----------------+               +--------------+
+|   Xvfb    |<----------| Chrome(有头)    |  <---CDP----  |  Playwright  |
+| :99 虚拟屏 |           | 真实窗口含顶栏  |  (ws 9222)     |  (代码执行)   |
++-----+-----+           +----------------+               +--------------+
+      ^ Pillow ImageGrab (XGetImage 直读)   ^
+      |                                    | CDP Input 注入
+      |                                    | (鼠标/滚轮/键盘/触控/文本)
+      v JPEG 编码 (Pillow, ~25ms/帧)        |
++------------------------------------+     |
+| FastAPI (全异步)                    |     |
+|  /ws/live  实时画面(仅最新帧,单窗口) | <---+
+|  /ws/input 远程操控双向通道          |
++------------------------------------+
 ```
 
 - **Xvfb**：虚拟显示器 `:99`（1280x800x24），供有头 Chrome 渲染。
-- **Chrome**：有头模式运行，**真实浏览器窗口（含标签栏 / 地址栏）**显示在画面上；每次启动使用全新临时配置目录（非无痕模式——无痕下 CDP 的 Cookie API 会失效，改用全新 `--user-data-dir` 实现隔离），不残留历史记录 / Cookie；`--remote-debugging-port` 暴露 CDP 供 Playwright 控制。
+- **Chrome**：有头模式运行，**真实浏览器窗口（含标签栏 / 地址栏）**显示在画面上，无 URL 参数、落在默认空白页。导航 / 远程操控 / 实时画面 / DevTools 面板共用**同一个常驻浏览器**（全新临时 `--user-data-dir` 配置，非无痕模式——无痕下 CDP 的 Cookie API 会失效）；每次 `POST /run` 执行代码时自动重启**全新浏览器**（重新分配临时配置目录与 CDP 端口），`--remote-debugging-port` 暴露 CDP 供 Playwright 与各通道控制，不残留历史记录 / Cookie。
 - **抓屏**：Pillow `ImageGrab` 直接读虚拟屏 → JPEG 编码，**不经过 ffmpeg**；抓屏跑在后端 asyncio 后台任务中，单帧抓取 / 编码放入默认执行器（`asyncio.to_thread`），事件循环始终空闲。
-- **FastAPI**：全异步（async/await）实现，**无线程**——所有接口与 WebSocket 均不阻塞事件循环；独立 asyncio 抓屏任务按 30fps 连续抓屏编码，WebSocket 只推送最新帧。
+- **FastAPI**：全异步（async/await）实现，**无线程**——所有接口与 WebSocket 均不阻塞事件循环；独立 asyncio 抓屏任务按 30fps 连续抓屏编码，WebSocket 只推送最新帧。实时画面 `/ws/live` 为**单窗口独占**：同一时刻仅一个连接，新窗口连入先收到 `conflict`，由客户端决定取消或 `kick` 接管原连接（同页刷新静默接管）。
+- **远程操控**：实时画面放大后是一层覆盖物，把鼠标 / 滚轮 / 键盘 / 中文输入事件通过 `/ws/input` 送到后端，后端用 **CDP Input 域**注入到常驻浏览器（坐标自动换算去掉浏览器顶栏偏移）。
 - **全异步依赖**：浏览器控制走 **Playwright async API**，网络请求走 `httpx` async client，MongoDB 走 **motor** 异步驱动，LSP 桥接走 `asyncio.create_subprocess_exec` + 异步 stdio。
+- **代码执行**：`POST /run` 以 **SSE 流式**回传（`start → stdout… → done`，空闲时 `heartbeat`），脚本中的 `print` 实时逐行推送到页面，客户端可随时中止请求实现**停止执行**；脚本在 worker 线程 + 独立事件循环中运行，不阻塞事件循环。
 - **爬虫与后处理**：后端内置 `httpx`、`BeautifulSoup` / `lxml`，代码编辑器可直接在脚本中 `import` 使用；基于 **pyright** 的类型分析以 `.venv/bin/python` 为解释器，基于 venv 中实际安装的包提供补全 / 签名提示 / 悬停文档（同时保留 `frontend/src/libApi.json` 作为变量语义高亮的类库索引）。除第三方库外，还覆盖 `os` / `os.path` / `sys` / `re` / `json` / `time` / `datetime` / `math` / `random` / `pathlib` / `html` / `hashlib` / `base64` / `csv` / `collections` / `itertools` / `functools` / `subprocess` / `glob` / `shutil` / `string` / `urllib.parse` / `urllib.request` 等常用标准库。
+- **持久化**：MongoDB 存放会话 / 消息 / 检查点（爬虫 Agent）、登录凭据 ticket（`login_tickets`）、代码提交快照（`code_commits` / `code_repos`），均按 `crawler_id` 隔离；编辑器未提交内容（源码管理草稿）由浏览器 `localStorage` 保存。
 
 ### ⚡ 毫秒级延迟
 
@@ -150,22 +162,28 @@ backend/
 ├── main.py          # 入口: FastAPI 应用工厂 + 生命周期
 ├── config.py        # 配置层: Config / 命令行参数 / 工具函数
 ├── schemas.py       # Schema 层: 接口输入输出约束(Pydantic 模型)
-├── services/        # 服务层: 抓屏、Xvfb/Chrome 链路、Playwright 控制、LSP 桥接
+├── services/        # 服务层: 抓屏、Xvfb/Chrome 链路、Playwright 控制、远程操控、LSP 桥接
 │   ├── capture.py   #   Subscriber / ScreenCapture 抓屏 asyncio 任务
 │   ├── browser.py   #   BrowserStream 子进程与浏览器控制(异步 Playwright)
 │   ├── cdp.py       #   CDPManager: 通用 CDP 会话/频道/事件分发
+│   ├── input.py     #   InputInjector: 远程操控(鼠标/滚轮/键盘/触控/文本 经 CDP Input 注入)
 │   ├── console.py   #   ConsoleChannel: DevTools Console 同步
 │   ├── network.py   #   NetworkChannel: 网络请求记录与响应体
 │   ├── dom.py       #   DOMChannel: DOM 树与元素盒模型(高亮)
 │   ├── storage.py   #   StorageChannel: Local/Session Storage/Cookies/IndexedDB
+│   ├── code_version.py # CodeStore: 编辑器代码提交快照(MongoDB, 按 crawler_id)
 │   ├── lsp.py       #   LspManager / LspSession: 浏览器 WebSocket <-> pyright 子进程桥接
 │   ├── crawler.py   #   代码执行环境注入的爬虫默认函数(save_page/save_content/登录凭据等)
 │   ├── sandbox.py   #   受限沙箱 safe_builtins: 禁 open/os/pathlib/shutil/subprocess 等
 │   ├── save.py      #   save_content 多格式序列化(txt/json/jsonl/csv/img)与字节截断
-│   └── agent/       #   爬虫 Agent: core(LLM/虚拟文件系统) session prompts tools bridge runner
+│   └── agent/       #   爬虫 Agent: agent(create_deep_agent) runner(会话编排/事件持久化)
+│                      #   core/(LLM + 虚拟文件系统) session/(store/event/model) tools/(浏览器/HTTP/
+│                      #   编辑器/规划/保存) login + run_login(登录闸口) middleware prompts checkpointer
 └── routers/         # 路由层: HTTP/WS 接口定义
     ├── console.py   #   GET /
-    ├── control.py   #   /status /pages /navigate /screenshot /run /restart /console/* /network/* /dom/* /storage/* /format /organize-imports
+    ├── control.py   #   /status /pages /navigate /screenshot /run(SSE) /restart /console/* /network/* /dom/* /storage/* /format /organize-imports
+    ├── input.py     #   /ws/input (远程操控双向 WebSocket)
+    ├── versions.py  #   /code/repo /code/commit /code/commits /code/checkout (源码版本)
     ├── lsp.py       #   /ws/lsp WebSocket + /lsp/info
     ├── stream.py    #   /ws/live + /ws/console + /ws/network + /ws/dom + /ws/storage + /live.mjpg
     └── agent.py     #   Agent 会话管理 / 多轮对话 / 问卷 / 登录 / /ws/agent / /editor/code
@@ -173,25 +191,35 @@ backend/
 
 ### 界面功能一览
 
-- 页面主体为 **VSCode 风格布局**：最左侧活动栏（Activity Bar）、**占据整个页面的代码编辑器**、**底部输出栏**、底部状态栏（Xvfb / Chrome / 帧率 / 观看数 / 末帧延迟）。
-- **Playwright 代码编辑器**（monaco-editor）：**占据整个页面**，每次执行自动重启全新浏览器（全新临时配置目录），支持 `Ctrl+Enter` 运行。
+- 页面主体为 **VSCode 风格布局**：最左侧活动栏（Activity Bar）→ 侧边面板 / **占据整个页面的代码编辑器**、**底部输出栏**、底部状态栏（Xvfb / Chrome / 抓屏帧率 / 末帧延迟）。
+- **Playwright 代码编辑器**（monaco-editor）：**占据整个页面**，执行代码会自动重启全新浏览器（全新临时配置目录），支持 `Ctrl+Enter` 运行；运行期间右下角"执行代码"按钮变为 **"执行中…（悬停即"停止执行"）**，可随时中止脚本。
+- **活动栏图标弹出侧边面板**（位于编辑器左侧，可拖拽右边线调整宽度；再次点击图标或点 × 关闭）：
+  - **浏览器控制**：地址栏 **跳转 / 新标签打开 / 刷新** 当前常驻浏览器；
+  - **状态**：Xvfb / Chrome + CDP / 抓屏运行状态、fps、已推帧数、末帧延迟、错误；
+  - **打开页面**：当前浏览器打开的标签页列表；
+  - **工具**：对当前页面 **截图**（PNG 预览）、**重启推流**（重启 Xvfb + Chrome + 抓屏整条链路）；
+  - **爬虫 Agent**：会话式多轮对话智能体面板（详见下文）；
+  - **源码管理**：代码 提交 / 历史 / 检出 面板（详见下文）。
 - **代码检查与编码辅助（LSP）**：编辑器内联 **pyright**（以 `.venv/bin/python` 为分析核心，等价 Pylance 的推理精度）——后端 `/api/v1/ws/lsp` 桥接 pyright 子进程，提供准确的类型推断、`对象.` 补全 / 悬停 / 签名提示、定义 / 引用跳转与静态检查；`page` / `context` / `browser` 三个注入全局由后端桩模块解析，不会误报未定义。
 - **Pylance 风格编码辅助**：内置 **inlay hints（参数名提示）**，调用已知 API 时在位置实参前显示参数名，关键字实参自动跳过；语义高亮区分 **变量 / 参数** 两种 token。
 - **代码快速修复（auto-import）**：当诊断报"未定义 `X`"且 `X` 命中类库索引时，编辑器小灯泡（💡）提供 "添加 import" 快速修复。
 - **整理导入**：`Shift+Alt+O` 或底部输出栏的 **"整理导入"** 按钮，调用后端 isort 排序 / 分组导入语句。
 - **问题栏（VSCode 风格）**：底部输出栏的 **"问题"** 标签页展示 pyright 检查结果（错误 / 警告计数、点击跳转），编辑器内同时有对应波浪线标注。
 - **Python 代码美化**：`Shift+Alt+F` 或 **"格式化代码"** 按钮，调用后端 **black** 一键美化。
-- **执行代码按钮与执行结果**放置在底部**输出栏**；输出栏**固定高度，可拖动其顶部边缘调整高度**。
-- **活动栏图标弹出侧边面板**：点击浏览器控制 / 状态 / 打开页面 / 工具图标，在编辑器左侧弹出对应面板，再次点击或点 × 关闭。
-- **悬浮实时画面**：显示**真实 Chrome 窗口**（含顶栏），毫秒级延迟；画面**始终悬浮**，默认缩在**右上角**（高度 ≤ 页面高度的 1/4），**点击放大**后居中悬浮，再次点击或点击暗色遮罩**缩小还原**。
+- **执行与输出（终端风格流式）**：输出栏 **"输出"** 标签页实时展示运行日志——每行带时间戳、未结束的半个行带闪烁光标、执行开始 / 结束用样式化标记（▶/✓/✗ + 耗时），出错时红色显示；结束后下方列出**已保存内容**（点击展开查看路径 / 内容详情）。输出栏高度可拖动其上边缘或左角调整。
+- **交互式登录浮窗**：独立运行（输出栏执行代码）的脚本调用 `page_login` 后，页面弹出可拖动的登录卡片（二维码登录自动**放大实时画面**便于扫码，提供"已完成扫码，继续 / 刷新二维码"；账密 / 短信验证码表单含"发送验证码"倒计时等），提交后脚本自动恢复执行。
+- **悬浮实时画面（远程操控）**：右上角悬浮 **真实 Chrome 窗口**（含顶栏），毫秒级延迟、**始终置顶**；默认缩在右上角（高度 ≤ 页面高度的 1/4，点击放大），无活跃浏览器时显示默认 logo：
+  - **点击放大**后居中悬浮、背景压暗，变成**远程操控台**：鼠标移动 / 点击 / 拖拽 / 滚轮滚动 / 键盘输入直接操作真实浏览器；可直接在画面内键入**中文（IME）**，或用底部文本输入框发送整段文本（支持输入法实时预览、Enter 发送）；
+  - 顶角工具条可**关闭 / 开启远程操控**（🖱/🚫）或 **缩小还原**；脚本执行期间自动暂停操控并在左上角提示原因（"脚本执行中，远程控制已暂停" 等）；
+  - 底部状态条显示 实时画面 / 延迟 / fps / 是否"可操控"；Elements 面板选中元素时，高亮框会叠加在画面上。
+- **单窗口独占连接**：实时画面**同一时刻仅允许一个窗口**观看与操控。第二个页面连入时后端推送 `conflict`，页面弹出"已有连接"提示，可选 **接管连接**（原窗口被断开、显示"已被其他窗口接管"提示条）或 **取消**；同一页面刷新重连（`client_id` 相同）则静默接管，不弹提示。
 - **浏览器控制台**：底部输出栏内置 **DevTools 面板**（点击"浏览器控制台"标签弹出子菜单）：
   - 子菜单含 **控制台 / Elements / Network / Application** 四项；
   - **Elements**：实时 DOM 树（自动跟随页面导航刷新），点击节点在**实时画面**上叠加高亮框，右侧显示元素属性；
-  - **Console**：JS 求值（`Enter` 执行、`↑/↓` 翻历史）、对象逐层展开、`console.table` 表格、`%s/%d/%o/%c` 格式符、`console.group/count/time/assert/clear`、未捕获异常堆栈、级别 / 文本筛选、时间戳、错误 / 警告计数；
+  - **Console**：JS 求值（`Enter` 执行、`↑/↓` 翻历史）、对象逐层展开、`console.table` 表格、`%s/%d/%o/%c` 格式符、`console.group/count/time/assert/clear`、未捕获异常堆栈、级别 / 文本筛选、时间戳、错误 / 警告计数、清空控制台；
   - **Network**：请求表（名称 / 方法 / 状态 / 类型 / 大小 / 耗时 / 时间线），点击查看请求 / 响应头、请求负载、**响应正文**，类型与文本筛选、"保留日志"、清空；
   - **Application**：Local / Session Storage（双击单元格编辑、增删）、Cookies（增删改）、IndexedDB（数据库 → 对象仓库 → 数据浏览），存储变更实时刷新；
   - 每次执行代码会重启全新浏览器，各面板自动跟随新实例。
-- 无活跃浏览器进程时，悬浮画面显示**默认 logo**；浏览器默认打开空白页（`about:blank`），无需传入 URL 参数。
 
 ## ⚙️ 配置参数
 
@@ -206,7 +234,7 @@ backend/
 | `--web-prefix` | `WEB_PREFIX` | `/` | 网页控制台与静态资源访问前缀(子路径部署用); API/WS 前缀另由 `--api-prefix` 控制 |
 | `--api-prefix` | `API_PREFIX` | `/api/v1` | 后端 API/WS 接口统一前缀(前端页面自动读取, 无需重新构建) |
 | `--chrome` | `CHROME_PATH` | 自动探测 | Chrome/Chromium 可执行文件路径 |
-| `--crawler-id` | `CRAWLER_ID` | 空（Agent 回退 `"default"`） | 当前爬虫 ID, Agent 会话/`get/set_login_ticket` 据此隔离并关联 MongoDB 中的登录凭据 |
+| `--crawler-id` | `CRAWLER_ID` | 空（回退 `"default"`） | 当前爬虫 ID, Agent 会话 / 登录凭据 ticket / 代码提交快照均据此隔离并持久化到 MongoDB |
 | `--mongo-uri` | `MONGO_URI` | `mongodb://127.0.0.1:27017` | MongoDB 连接地址 |
 | `--mongo-db` | `MONGO_DB` | `crawler` | MongoDB 数据库名 |
 | `--llm-provider` | `LLM_PROVIDER` | `deepseek` | LLM 服务商: deepseek / dashscope / openai / 其他 OpenAI 兼容接口 |
@@ -225,8 +253,9 @@ backend/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/`（默认；设 `--web-prefix` 后为 `/{web-prefix}` 及 `/{web-prefix}/`） | 网页控制台（静态资源在 `/assets` 与 `/{web-prefix}/assets`） |
-| WS  | `/api/v1/ws/live` | 实时画面 WebSocket（二进制: float64 时间戳 + JPEG） |
-| GET | `/api/v1/live.mjpg` | MJPEG 兼容接口(兼容旧 `<img>` 播放) |
+| WS  | `/api/v1/ws/live` | 实时画面 WebSocket（**单窗口独占**：第二窗口收到 `conflict`，可回 `kick` 接管原连接；同页刷新 `?client_id=` 相同则静默接管）。二进制帧 = float64 时间戳 + JPEG；控制消息 `hello` / `conflict` / `kicked` |
+| WS  | `/api/v1/ws/input` | 远程操控双向 WebSocket：客户端上报 鼠标(`move/down/up/wheel`) / 键盘(`down/up/char`) / 触控 / 文本(`insert/compose/commit`) 事件，后端经 CDP Input 注入浏览器；返回 `hello {viewport,offset,enabled}` / `ok` / `disabled` / `error` |
+| GET | `/api/v1/live.mjpg` | MJPEG 兼容接口(兼容旧 `<img>` 播放, 不受单窗口限制) |
 | WS  | `/api/v1/ws/console` | 浏览器控制台实时同步 WebSocket（通过 CDP 监听 `consoleAPICalled`/`exceptionThrown`/`Log.entryAdded`，支持格式符/对象展开/分组/表格） |
 | WS  | `/api/v1/ws/network` | 网络请求实时记录 WebSocket（op 为 request/response/finished/failed/nav/clear） |
 | WS  | `/api/v1/ws/dom` | DOM 变更通知 WebSocket（导航/文档更新时触发，前端自动重取 DOM 树） |
@@ -245,13 +274,18 @@ backend/
 | POST | `/api/v1/storage/idb/databases` / `stores` / `data` | IndexedDB 数据库/对象仓库/数据浏览 |
 | GET | `/api/v1/status` | 进程/抓屏/页面状态 JSON |
 | GET | `/api/v1/pages` | 当前打开的标签页列表 |
-| POST | `/api/v1/navigate` | 导航 `{"url":"...","new_page":bool}` |
-| POST | `/api/v1/screenshot` | 返回页面 PNG 截图 |
+| POST | `/api/v1/navigate` | 导航常驻浏览器 `{"url":"...","new_page":bool}` |
+| POST | `/api/v1/screenshot` | 返回当前页面 PNG 截图 |
 | POST | `/api/v1/restart` | 重启 Xvfb+Chrome+抓屏整条链路 |
-| POST | `/api/v1/run` | 执行 Playwright 代码，每次自动重启全新浏览器（全新临时配置目录），代码内可用 `page`/`context`/`browser` 及爬虫默认函数，返回 `{ok, output, error, saved}` |
-| GET | `/api/v1/run/{run_id}/login` | 轮询当前独立运行的登录请求 |
+| POST | `/api/v1/run` | **SSE 流式**执行 Playwright 代码：事件序列 `start → stdout…（→ heartbeat）→ done`，需要时穿插 `run_login / run_login_success / run_login_timeout`；执行前自动重启全新浏览器，代码内可用 `page`/`context`/`browser` 及爬虫默认函数；客户端可随时断开中止执行，`done` 含 `{ok, output, error, saved}` |
+| GET | `/api/v1/run/{run_id}/login` | 轮询当前独立运行的登录请求（`page_login` 挂起时） |
 | POST | `/api/v1/run/{run_id}/login-answer` | 提交独立运行的登录答案, 恢复被 `page_login` 挂起的脚本 |
-| POST | `/api/v1/run/{run_id}/login-action` | 独立运行登录框内的浏览器动作（`send_code`/`refresh_captcha`） |
+| POST | `/api/v1/run/{run_id}/login-action` | 独立运行登录框内的浏览器动作（`send_code` / `refresh_captcha` / `refresh_qr`） |
+| GET | `/api/v1/code/repo` | 源码仓库状态: 是否已有提交 + HEAD 摘要（MongoDB 不可达时优雅降级） |
+| POST | `/api/v1/code/commit` | 把工作区代码固化为一次提交（内容无变化返回 400；MongoDB 不可达返回 503） |
+| GET | `/api/v1/code/commits` | 提交历史（按时间倒序, 可选 `before` 分页）, 每条含相对父提交的增删统计 |
+| GET | `/api/v1/code/commits/{commit_id}` | 单次提交详情（含全量源码, 供检出/对比） |
+| POST | `/api/v1/code/checkout` | 检出某次提交内容到工作区（不动 HEAD） |
 | WS  | `/api/v1/ws/lsp` | LSP WebSocket: 桥接 pyright, 提供补全/悬停/签名/诊断/定义跳转 |
 | GET | `/api/v1/lsp/info` | LSP 工作区信息, 前端据此建立模型 URI |
 | POST | `/api/v1/format` | 用 black 格式化 Python 代码 |
@@ -262,6 +296,7 @@ backend/
 | GET | `/api/v1/agent/session/{id}/messages` | 读取会话消息历史（用于恢复/续聊） |
 | PATCH | `/api/v1/agent/session/{id}` | 重命名会话（手动改名后不再被自动标题覆盖） |
 | DELETE | `/api/v1/agent/session/{id}` | 删除会话及其全部消息 |
+| POST | `/api/v1/agent/session/{id}/finalize` | 按 MongoDB 实际消息重建会话汇总（二次兜底同步） |
 | GET | `/api/v1/agent/info` | 返回后端配置的 `crawler_id`（会话隔离标识） |
 | POST | `/api/v1/agent/start` | 兼容旧接口: 新建会话并立即以任务作为第一条消息 |
 | WS  | `/api/v1/ws/agent` | Agent 执行事件实时推送, 可选 `?session=<id>` 只看某会话 |
@@ -279,7 +314,7 @@ backend/
 
 ### Playwright 代码控制
 
-控制台内置**代码编辑器**，每次点击"执行代码"会自动重启全新浏览器（全新临时配置目录），并预置 `page` / `context` / `browser` 对象，`print` 输出会回显到页面。
+控制台内置**代码编辑器**，点击输出栏"执行代码"（或 `Ctrl+Enter`）会自动重启全新浏览器（全新临时配置目录），并预置 `page` / `context` / `browser` 对象。`print` 输出经 **SSE 流式实时回显**到输出栏（终端风格、带时间戳）；运行期间右下角按钮变为 **"停止执行"**，可随时中止长时间卡住的脚本；脚本调用 `page_login` 时页面会弹出登录浮窗并暂停等待。
 脚本为 **async 风格**：使用 `page` / `context` / `browser` 及内置函数（`save_page` / `save_content` / `get_login_ticket` / `set_login_ticket`）时需加 `await`，顶层 `await` 直接可用。示例：
 
 ```python
@@ -313,7 +348,7 @@ for link in soup.select("a[href]"):
 | `limit_items(data, n=None)` | 开发测试模式限制遍历长度：列表/元组取前 `n` 条（默认 `max_items`），迭代器/生成器走 `islice` 惰性截取；生产模式原样返回 |
 | `get_login_ticket(host)` | 从 MongoDB 读取指定 `host` 下储存的 ticket 并原样返回，未找到返回 `None`；**只负责读取，不做任何处理**，ticket 的获取与如何使用由用户脚本自行实现（用 playwright 对象直接注入） |
 | `set_login_ticket(ticket, host)` | 将 `ticket` 值直接储存在指定的 `host` 下（不存在则新建，关联当前 `crawler_id`）；**只负责存储，不做任何处理**，返回写入的 `ticket` |
-| `page_login(method, ...)` | 交互式登录（需爬虫 Agent 运行）：`method` **必填，必须显式指定** `qr`（扫码）/ `account`（账密）/ `sms`（验证码），**不支持 `auto`**；返回 `{"ok","method","url","error"}`。**仅负责唤起用户登录，不保存凭据** |
+| `page_login(method, ...)` | 交互式登录（**需在爬虫 Agent 会话或独立运行 `/run` 脚本中调用**，脚本会暂停并弹出登录框等待用户）：`method` **必填，必须显式指定** `qr`（扫码）/ `account`（账密）/ `sms`（验证码），**不支持 `auto`**；返回 `{"ok","method","url","error"}`。**仅负责唤起用户登录，不保存凭据** |
 | `capture_login_state()` | 读取浏览器 cookies / localStorage / sessionStorage 返回完整快照，附带 `credentials` 字段分类鉴权凭据（token/jwt 等） |
 | `restore_login_state(state)` | 把登录态快照恢复进当前浏览器，新浏览器也能直接拿到登录态 |
 
@@ -362,7 +397,7 @@ await save_page()                            # 保存当前页面 HTML
 await save_content(soup.get_text(strip=True))  # 保存提取出的文本内容
 ```
 
-**推荐登录流程**（交互式登录需通过爬虫 Agent 的 `browser_run_code`/`debug_code` 运行，脚本会在此暂停等待用户）。需要登录时脚本登录段按**必选流程**固定编写：**始终先 `get_login_ticket` 尝试复用凭据 → 取到则访问对应网站、注入页面后刷新生效 → 取不到或凭据失效（先清空已注入信息）则 `page_login` 自动导航到登录页交互登录 → 每次 `page_login` 登录成功都一定用 playwright 提取凭据并 `set_login_ticket` 保存**：
+**推荐登录流程**（交互式登录需在爬虫 Agent 会话（`browser_run_code`/`debug_code`）或独立运行（输出栏执行）中调用 `page_login`，脚本会在此暂停、前端弹出登录框等待用户操作）。需要登录时脚本登录段按**必选流程**固定编写：**始终先 `get_login_ticket` 尝试复用凭据 → 取到则访问对应网站、注入页面后刷新生效 → 取不到或凭据失效（先清空已注入信息）则 `page_login` 自动导航到登录页交互登录 → 每次 `page_login` 登录成功都一定用 playwright 提取凭据并 `set_login_ticket` 保存**：
 
 ```python
 # 1) 始终先尝试复用已保存凭据
@@ -391,19 +426,51 @@ if not logged_in:                                   # 取不到 / 凭据失效 �
     await set_login_ticket(ticket=cookies, host="example.com")
 ```
 
+### 浏览器远程控制
+
+不写代码也能直接操控真实浏览器——把右上角悬浮的**实时画面放大**，它就成了远程操控台：
+
+1. 点击右上角悬浮画面将其**放大**（居中悬浮、背景压暗；再次点击画面或暗色遮罩缩小还原）。
+2. 放大后画面进入**可操控**状态（底部状态条出现"可操控"角标）：鼠标移动 / 单击 / 拖拽、**滚轮滚动**、键盘输入（含 `Ctrl/Cmd/Alt/Shift` 组合键与方向键）都会直接作用于真实浏览器。
+3. 需要输入文字时：可直接在画面内聚焦后**键入中文**（IME 组合结束后整段提交），或使用画面底部**文本输入框**发送长文本（支持输入法实时预览，`Enter` 发送）。
+4. 顶部工具条可 **🖱 / 🚫 开关远程操控**、**⤡ 缩小还原**；左上有黄字提示当前不可操控的原因（如"脚本执行中，远程控制已暂停"）。
+
+说明与限制：
+
+- 远程操控作用于后端的**常驻浏览器**（导航 / DevTools / 代码执行共用同一实例）；执行代码会把它替换为全新实例，故**脚本运行期间远程操控自动暂停**；
+- 实时画面**同一时刻仅一个窗口**可连接观看与操控——第二个窗口打开本平台时会弹"已有连接"提示，可选择**接管连接**（把原窗口断开）或取消；被接管后原窗口顶部出现"连接已由其他窗口接管"提示条，刷新页面即可重新连接；
+- 实现上由 `/api/v1/ws/input` 双向 WebSocket 承载（`backend/services/input.py`），后端经 CDP `Input` 域把事件注入浏览器，画面坐标到浏览器可视区坐标已自动换算（扣除浏览器顶栏偏移，dpr 视为 1）。
+
+### 源码版本管理
+
+活动栏的**分支图标**打开**源码管理**面板。编辑器内的整份 Python 代码作为一个"文件"参与版本管理，提交内容按 `crawler_id` 隔离、持久化到 MongoDB（`code_commits` / `code_repos` 集合）：
+
+- **未提交变更**：实时显示当前代码相对最新提交（HEAD）的增删统计（`+n −m`），可展开查看 VSCode 风格 diff；
+- **提交**：填写**提交信息**（≤200 字，`Enter` 提交）与**提交人**（本地记忆）后，把当前工作区内容固化为一次快照；内容相对 HEAD 无变化时后端返回"无变更"错误，MongoDB 不可达时提交返回 503；
+- **历史**：倒序时间线列出全部提交（每条含 提交信息 / 作者 / 时间 / 相对父提交的 +− 统计），点击展开查看该次提交的完整差异，展开后可一键**检出**——用该版本覆盖工作区（HEAD 不动，检出前会二次确认）；
+- **仓库状态**：显示当前 `crawler_id`、HEAD（short hash + 提交信息）。
+
+草稿与刷新合并：
+
+- 未提交的工作区内容由浏览器 **localStorage** 按 `crawler_id` 实时暂存（自动保存，无需手动操作；存储容量不足时面板提示"草稿未保存"）；
+- 页面刷新 / 重开时，若本机暂存草稿与远端"最新权威代码"不一致（他端的新提交，或 Agent 回写到后端镜像的代码），会自动做**三方合并**：无冲突则自动合并并提示"已合并暂存草稿与刷新后的最新变更"；有冲突则进入**逐段解决**界面——每段可选择 保留草稿 / 保留最新 / 保留两者（或一键统一保留某一方），**绝不在加载时静默覆盖本地草稿**；
+- Agent `set_editor_code` 写回的代码会进入工作区成为"未提交变更"，可在面板中直接提交。
+
+配套接口：`/api/v1/code/repo`、`/api/v1/code/commit`、`/api/v1/code/commits`、`/api/v1/code/commits/{commit_id}`、`/api/v1/code/checkout`。
+
 ### 爬虫 Agent
 
 活动栏的**蜘蛛图标**打开**爬虫 Agent**面板。它基于 **langchain + deepagents**（`create_deep_agent` + `AgentMiddleware` + 结构化工具）构建，是**统一的会话式多轮对话智能体**——不再区分"爬虫采集 / 编码调试"两种类型，意图由 Agent 自行判断；无论采集数据、修改/优化编辑器脚本，最终都以**把完整可复用的脚本写回编辑器**为交付目标。
 
 #### 会话式多轮对话
 
-- **会话持久化**：会话与消息按 `crawler_id` 隔离并持久化到 MongoDB，支持多轮续聊；后端重启后自动从 MongoDB 注入历史再继续。会话下拉菜单可**新建 / 切换 / 删除 / 重命名**，会话运行期间需等当前轮次完成后再发送下一条消息。
+- **会话持久化**：会话与消息按 `crawler_id` 隔离并持久化到 MongoDB，支持多轮续聊；后端重启后自动从 MongoDB 注入历史再继续。会话下拉菜单可**新建 / 切换 / 删除 / 重命名**，面板一次只执行一个会话——某会话运行 / 等待登录时，其余会话显示"被占用"、输入框旁提供**停止**按钮可随时终止当前轮次。
 - **自动标题**：新建会话默认标题"新会话"，发送第一条消息后由 LLM 根据消息内容自动生成简短标题；用户也可随时手动改名（点击标题栏铅笔按钮或会话下拉菜单中每条会话的铅笔图标），手动改名后自动标题不再覆盖。
 - 在面板输入框发送任务即可；也可用兼容接口 `POST /api/v1/agent/start` `{"task":"..."}` 快速发起。
 
 #### Agent 能力
 
-- **操控项目浏览器**：`browser_navigate` / `browser_evaluate` / `page_analyze` / `browser_run_code` 直接驱动项目内置的 Xvfb + Chrome 链路。用户只能通过实时画面观察浏览器、无法直接操作，**所有浏览器操作均由 Agent 自主完成**；需要账号/密码/验证码等私有信息时通过 `page_login` 模拟登录框询问并由系统自动回填。
+- **操控项目浏览器**：`browser_navigate` / `browser_evaluate` / `page_analyze` / `browser_run_code` 直接驱动项目内置的 Xvfb + Chrome 链路，**浏览器操作由 Agent 自主完成**；需要账号/密码/验证码等私有信息时通过 `page_login` 模拟登录框询问并由系统自动回填（`browser_run_code` 可传 `restart=false` 复用当前浏览器以保住登录态）。
 - **判断爬取方式**：先 `http_request` 试探能否直抓（静态页、无鉴权走 HTTP），判断是否需要登录、是否 JS 动态渲染、反爬强度，再决定用浏览器渲染抓取。
 - **先规划再实施**：复杂任务先用 `record_plan` 记录结构化规划（`goal / candidate_sites / scope / method / login_required / data_fields / steps`，展示在面板"📋 爬取规划"卡片），再用 `write_todos` 建立任务清单（面板"✅ 任务清单"实时显示进度，含进度条），中途遇到意外（页面结构变化、接口被封、方案走不通等）可主动修订规划与清单。
 - **小步调试再交付**：修改代码前先把待验证片段用 `debug_code`（临时脚本，写入虚拟文件系统 `/agent_backend/` 下）小范围运行验证，拼接跑通后再 `set_editor_code` 一次性写回编辑器；前端会展示**每次写回相对上一次修改/源文件的代码差异（diff 卡片）**。
@@ -420,7 +487,7 @@ Agent 的工具基于虚拟文件系统，根目录 `/` 对应磁盘上的 `tmp/
 
 | 虚拟路径 | 磁盘位置 | 用途 |
 |----------|----------|------|
-| `/` | `tmp/` | 虚拟文件系统根目录（`ls`/`read_file`/`write_file`/`glob` 等操作范围） |
+| `/` | `tmp/` | 虚拟文件系统根目录（`ls`/`read`/`glob`/`write_file` 等操作范围） |
 | `/agent_backend/` | `tmp/agent_backend/` | `debug_code` 临时调试脚本 / `write_file` 归档脚本 |
 | `/agent_saved/` | `tmp/agent_saved/` | `archive_content` 归档的辅助内容 |
 | `/saved/` | `tmp/saved/` | `browser_run_code` 脚本内 `save_page`/`save_content` 保存的爬取结果 |
@@ -440,7 +507,7 @@ uv run python -m backend.main --llm-api-key sk-xxx --llm-model deepseek-v4-flash
 ## 🧪 测试
 
 ```bash
-uv run pytest                        # 全部测试 (~560 个)
+uv run pytest                        # 全部测试 (~660 个)
 uv run pytest --cov=backend --cov-report=term   # 覆盖率报告 (90%+)
 ```
 
@@ -450,7 +517,10 @@ uv run pytest --cov=backend --cov-report=term   # 覆盖率报告 (90%+)
 
 ## ❓ 常见问题
 
-- **延迟大/画面卡**：多为带宽不足。降低 `--quality`（如 50）或调小分辨率；确认观看数不多。
+- **延迟大/画面卡**：多为带宽不足。降低 `--quality`（如 50）或调小分辨率。实时画面同一时刻只有一个窗口连接，不存在"多人观看"带来的额外带宽。
+- **多窗口打开被提示"已有连接"**：本平台实时画面**同时仅允许一个窗口**观看与操控（非共享平台）。若第二个窗口是本页面刷新重开，会自动接管、不弹提示；否则可点击"接管连接"抢占或取消。
+- **执行很久没反应**：`/run` 为 SSE 流式输出，运行中输出栏可看到实时 `print`（空闲 5s 发一次心跳）。想终止脚本直接点 **"停止执行"**。
+- **源码管理 / Agent 会话 / 登录凭据不生效**：这些功能依赖 MongoDB（默认 `mongodb://127.0.0.1:27017`，库 `crawler`），确认已启动 Mongo；源码提交、Agent 会话等都会按 `--crawler-id`（缺省 `default`）隔离存储。
 - **root 环境**：Chrome 已带 `--no-sandbox`，容器/CI 下可直接运行。
 - **多显示器冲突**：若 `:99` 已被其他进程的存活 Xvfb 占用（如上次实例崩溃遗留），后端会自动复用该 Xvfb 并同步清理遗留的 Chrome 窗口，状态栏的 Xvfb 指示灯反映真实运行状态，无需手动干预。
 
