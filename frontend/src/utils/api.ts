@@ -1,4 +1,13 @@
-export const API_PREFIX = "/api/v1";
+function metaApiPrefix(): string | null {
+  if (typeof document === "undefined") return null;
+  return (
+    document.querySelector('meta[name="acs-api-prefix"]')?.getAttribute("content") ??
+    null
+  );
+}
+
+/** 后端注入的 API/WS 前缀(meta 标签); 未注入(如 vite dev)时回退默认 /api/v1。 */
+export const API_PREFIX = metaApiPrefix() || "/api/v1";
 
 export function api(path: string): string {
   return `${API_PREFIX}${path}`;

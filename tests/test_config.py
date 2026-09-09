@@ -20,6 +20,7 @@ def test_config_defaults():
     assert c.cdp_port == 9222
     assert c.web_host == "0.0.0.0"
     assert c.web_port == 8080
+    assert c.web_prefix == "/"
     assert c.api_prefix == "/api/v1"
     assert c.chrome is None
     assert c.crawler_id == "dev_test"
@@ -122,6 +123,7 @@ def test_build_config_env(monkeypatch):
     monkeypatch.setenv("CDP_PORT", "9333")
     monkeypatch.setenv("WEB_HOST", "127.0.0.1")
     monkeypatch.setenv("WEB_PORT", "9999")
+    monkeypatch.setenv("WEB_PREFIX", "studio/")
     monkeypatch.setenv("API_PREFIX", "api/v2")
     monkeypatch.setenv("CHROME_PATH", "/opt/chrome")
     monkeypatch.setenv("CRAWLER_ID", "crawl_42")
@@ -147,6 +149,7 @@ def test_build_config_env(monkeypatch):
     assert c.cdp_port == 9333
     assert c.web_host == "127.0.0.1"
     assert c.web_port == 9999
+    assert c.web_prefix == "/studio"
     assert c.api_prefix == "/api/v2"
     assert c.chrome == "/opt/chrome"
     assert c.crawler_id == "crawl_42"
@@ -173,6 +176,7 @@ def test_build_config_cli_args(monkeypatch):
             "--width", "800",
             "--height", "600",
             "--api-prefix", "foo",
+            "--web-prefix", "  panel ",
             "--no-dev-limit",
         ],
     )
@@ -181,4 +185,5 @@ def test_build_config_cli_args(monkeypatch):
     assert c.width == 800
     assert c.height == 600
     assert c.api_prefix == "/foo"
+    assert c.web_prefix == "/panel"
     assert c.dev_limit is False

@@ -23,6 +23,7 @@ class Config:
     cdp_port: int = 9222
     web_host: str = "0.0.0.0"
     web_port: int = 8080
+    web_prefix: str = "/"
     api_prefix: str = "/api/v1"
     chrome: str | None = None
     crawler_id: str = "dev_test"
@@ -56,6 +57,16 @@ def find_free_port(preferred: int) -> int:
         port += 1
 
 
+def _norm_prefix(raw: str, *, default: str = "/") -> str:
+    value = raw.strip()
+    if not value:
+        return default
+    if not value.startswith("/"):
+        value = "/" + value
+    value = value.rstrip("/")
+    return value or default
+
+
 def build_config() -> Config:
     parser = argparse.ArgumentParser(description="Xvfb + Chrome(有头真实窗口) + 抓屏 实时画面 + Playwright 控制")
     parser.add_argument("--display", default=os.environ.get("XFB_DISPLAY", ":99"))
@@ -68,6 +79,8 @@ def build_config() -> Config:
     parser.add_argument("--cdp-port", type=int, default=int(os.environ.get("CDP_PORT", "9222")))
     parser.add_argument("--host", default=os.environ.get("WEB_HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "8080")))
+    parser.add_argument("--web-prefix", default=os.environ.get("WEB_PREFIX", "/"),
+                        help="网页控制台与静态资源访问前缀(默认 /); API/WS 前缀由 --api-prefix 控制")
     parser.add_argument("--api-prefix", default=os.environ.get("API_PREFIX", "/api/v1"))
     parser.add_argument("--chrome", default=os.environ.get("CHROME_PATH"))
     parser.add_argument("--crawler-id", default=os.environ.get("CRAWLER_ID", ""),
@@ -98,10 +111,8 @@ def build_config() -> Config:
                         default=int(os.environ.get("MAX_BYTES", str(512 * 1024))),
                         help="开发模式单次保存(save_content 文本 / save_page HTML)的最大字节数")
     args = parser.parse_args()
-    api_prefix = args.api_prefix.strip()
-    if not api_prefix.startswith("/"):
-        api_prefix = "/" + api_prefix
-    api_prefix = api_prefix.rstrip("/")
+    api_prefix = _norm_prefix(args.api_prefix, default="")
+    web_prefix = _norm_prefix(args.web_prefix, default="/")
     return Config(
         display=args.display,
         width=args.width,
@@ -111,6 +122,7 @@ def build_config() -> Config:
         cdp_port=args.cdp_port,
         web_host=args.host,
         web_port=args.port,
+        web_prefix=web_prefix,
         api_prefix=api_prefix,
         chrome=args.chrome,
         crawler_id=args.crawler_id,

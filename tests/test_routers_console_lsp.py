@@ -22,6 +22,69 @@ async def test_console_index():
         resp = await c.get("/")
         assert resp.status_code == 200
         assert b"<" in resp.content
+        assert b'<meta name="acs-api-prefix" content="/api/v1">' in resp.content
+
+
+def _index_asset_paths(content: bytes) -> list[str]:
+    import re
+
+    return re.findall(rb'(?:src|href)="([^"]+/assets/[^"]+)"', content)
+
+
+async def test_console_index_web_prefix():
+    from backend.config import Config
+
+    cfg = Config(web_prefix="/studio")
+    app = make_test_app(cfg=cfg)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        for path in ("/studio", "/studio/"):
+            resp = await c.get(path)
+            assert resp.status_code == 200, path
+            assert b"<" in resp.content
+            assets = _index_asset_paths(resp.content)
+            assert assets, path
+            for ref in assets:
+                assert ref.startswith(b"/studio/assets/"), ref
+        resp = await c.get("/studio/assets/not-exists-xyz.js")
+        assert resp.status_code == 404
+
+
+async def test_console_index_api_prefix_meta():
+    from backend.config import Config
+
+    cfg = Config(web_prefix="/studio", api_prefix="/api/studio/v1")
+    app = make_test_app(cfg=cfg)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.get("/studio/")
+        assert resp.status_code == 200
+        assert b'<meta name="acs-api-prefix" content="/api/studio/v1">' in resp.content
+        assert b'="/assets/' not in resp.content
+        r_new = await c.get("/api/studio/v1/status")
+        assert r_new.status_code == 200
+        r_old = await c.get("/api/v1/status")
+        assert r_old.status_code == 404
+
+
+async def test_console_assets_web_prefix():
+    from backend.config import STATIC_DIR, Config
+
+    assets = list((STATIC_DIR / "assets").glob("*")) if (STATIC_DIR / "assets").is_dir() else []
+    if not assets:
+        pytest.skip("static/assets 不存在")
+    target = next(a for a in assets if a.is_file())
+    cfg = Config(web_prefix="/studio")
+    app = make_test_app(cfg=cfg)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        r1 = await c.get(f"/studio/assets/{target.name}")
+        assert r1.status_code == 200
+        r2 = await c.get(f"/assets/{target.name}")
+        assert r2.status_code == 200
 
 
 # --------------------------------------------------------------------------- lsp info

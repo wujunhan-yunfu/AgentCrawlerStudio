@@ -608,8 +608,9 @@ class FakeAgentManager:
 def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     """构建注入假服务的 FastAPI 应用(不运行 lifespan)。"""
     from fastapi import FastAPI
+    from fastapi.staticfiles import StaticFiles
 
-    from backend.config import Config
+    from backend.config import STATIC_DIR, Config
     from backend.routers import agent as agent_router
     from backend.routers import console as console_router
     from backend.routers import control as control_router
@@ -629,6 +630,14 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     app.state.run_login = (
         run_login if run_login is not None else RunLoginManager(EventHub())
     )
+    if (STATIC_DIR / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+        if cfg.web_prefix != "/":
+            app.mount(
+                f"{cfg.web_prefix}/assets",
+                StaticFiles(directory=STATIC_DIR / "assets"),
+                name="assets_web",
+            )
     app.include_router(console_router.router)
     app.include_router(control_router.router, prefix=cfg.api_prefix)
     app.include_router(input_router.router, prefix=cfg.api_prefix)
@@ -636,6 +645,9 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     app.include_router(stream_router.router, prefix=cfg.api_prefix)
     app.include_router(agent_router.router, prefix=cfg.api_prefix)
     app.include_router(versions_router.router, prefix=cfg.api_prefix)
+    if cfg.web_prefix != "/":
+        app.add_api_route(f"{cfg.web_prefix}", console_router.index, methods=["GET"])
+        app.add_api_route(f"{cfg.web_prefix}/", console_router.index, methods=["GET"])
     return app
 
 

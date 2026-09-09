@@ -60,6 +60,12 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     if (STATIC_DIR / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+        if cfg.web_prefix != "/":
+            app.mount(
+                f"{cfg.web_prefix}/assets",
+                StaticFiles(directory=STATIC_DIR / "assets"),
+                name="assets_web",
+            )
 
     app.state.cfg = cfg
     app.include_router(console.router)
@@ -69,6 +75,9 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     app.include_router(stream.router, prefix=cfg.api_prefix)
     app.include_router(agent.router, prefix=cfg.api_prefix)
     app.include_router(versions.router, prefix=cfg.api_prefix)
+    if cfg.web_prefix != "/":
+        app.add_api_route(f"{cfg.web_prefix}", console.index, methods=["GET"])
+        app.add_api_route(f"{cfg.web_prefix}/", console.index, methods=["GET"])
     return app
 
 

@@ -133,7 +133,7 @@ uv run python -m backend.main
 
 启动后访问：**http://\<主机IP\>:8080**
 
-> 所有 API/WS 接口均挂在可配置前缀下，默认 **`/api/v1`**（如 `/api/v1/status`、`/api/v1/ws/live`），仅网页控制台 `GET /` 例外。可通过 `--api-prefix` 或环境变量 `API_PREFIX` 修改。
+> 所有 API/WS 接口均挂在可配置前缀下，默认 **`/api/v1`**（如 `/api/v1/status`、`/api/v1/ws/live`），仅网页控制台 `GET /` 例外。API/WS 前缀通过 `--api-prefix` 或环境变量 `API_PREFIX` 修改，前端页面会从后端注入的 `acs-api-prefix` meta 自动读取该前缀发起请求（无需重新构建）；网页控制台入口与静态资源的前缀通过 `--web-prefix` 或环境变量 `WEB_PREFIX` 修改（默认 `/`，子路径部署时设为如 `/studio`，页面与资源会同时保留在 `/` 下，且页面内资源引用自动带上该前缀）。
 
 ### 前端开发模式
 
@@ -203,7 +203,8 @@ backend/
 | `--quality` | `JPEG_QUALITY` | `70` | JPEG 画质 1-100, 越高越清晰但带宽越大 |
 | `--cdp-port` | `CDP_PORT` | `9222` | Chrome CDP 端口(占用时自动+1) |
 | `--host` / `--port` | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `8080` | Web 服务监听 |
-| `--api-prefix` | `API_PREFIX` | `/api/v1` | 后端 API/WS 接口统一前缀 |
+| `--web-prefix` | `WEB_PREFIX` | `/` | 网页控制台与静态资源访问前缀(子路径部署用); API/WS 前缀另由 `--api-prefix` 控制 |
+| `--api-prefix` | `API_PREFIX` | `/api/v1` | 后端 API/WS 接口统一前缀(前端页面自动读取, 无需重新构建) |
 | `--chrome` | `CHROME_PATH` | 自动探测 | Chrome/Chromium 可执行文件路径 |
 | `--crawler-id` | `CRAWLER_ID` | 空（Agent 回退 `"default"`） | 当前爬虫 ID, Agent 会话/`get/set_login_ticket` 据此隔离并关联 MongoDB 中的登录凭据 |
 | `--mongo-uri` | `MONGO_URI` | `mongodb://127.0.0.1:27017` | MongoDB 连接地址 |
@@ -223,7 +224,7 @@ backend/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/` | 网页控制台 |
+| GET | `/`（默认；设 `--web-prefix` 后为 `/{web-prefix}` 及 `/{web-prefix}/`） | 网页控制台（静态资源在 `/assets` 与 `/{web-prefix}/assets`） |
 | WS  | `/api/v1/ws/live` | 实时画面 WebSocket（二进制: float64 时间戳 + JPEG） |
 | GET | `/api/v1/live.mjpg` | MJPEG 兼容接口(兼容旧 `<img>` 播放) |
 | WS  | `/api/v1/ws/console` | 浏览器控制台实时同步 WebSocket（通过 CDP 监听 `consoleAPICalled`/`exceptionThrown`/`Log.entryAdded`，支持格式符/对象展开/分组/表格） |
