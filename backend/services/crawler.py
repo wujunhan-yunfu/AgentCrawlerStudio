@@ -1,12 +1,14 @@
 """爬虫编码器默认可用函数: 保存页面/内容, 登录凭据(MongoDB)存取(全异步)。
 
-默认注入到代码执行环境中的全局函数(async 风格, 调用时需 await):
+    默认注入到代码执行环境中的全局函数(async 风格, 调用时需 await):
     save_page()                保存当前页面的完整 HTML 到 tmp/saved
     save_content(data, fmt)    保存数据(文本/JSON/JSONL/CSV/base64 图片)到 tmp/saved
     get_login_ticket(host)     从 MongoDB 读取指定 host 下储存的 ticket(仅读取, 不做任何处理)
     set_login_ticket(ticket, host)  将 ticket 值直接储存在指定的 host 下(不做任何处理)
     limit_items(data, n)       开发测试模式限制遍历/保存长度(列表取前 n 条,
                                迭代器走 islice), 生产模式(--no-dev-limit)原样返回
+    verify_check(...)          人机验证常驻监听(async with 包裹易触发段, 运行中自动过验,
+                               限次未过抛 VerificationFailed 结束本次运行; 不弹窗)
 
 开发测试模式(dev_limit, 默认开启)会自动限制数据量防止运行过长/token 过多:
 - save_content 对列表/元组截断为前 max_items 条, txt 再按 max_bytes 截断;

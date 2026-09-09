@@ -102,10 +102,15 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         用于复杂爬取流程的整体运行: 登录->翻页->提取->保存。
         默认(restart=True)每次执行会重启全新无痕浏览器; 代码内可直接使用
         page / context / browser 对象, 以及内置函数 save_page() / save_content() /
-        limit_items() / get_login_ticket() / set_login_ticket()。脚本为 async 风格,
-        使用这些对象/函数时需加 await(如 `await page.goto(url)`、`await save_page()`),
+        limit_items() / get_login_ticket() / set_login_ticket() / verify_check()。
+        脚本为 async 风格, 使用这些对象/函数时需加 await(如 `await page.goto(url)`、
+        `await save_page()`; verify_check 用 `async with verify_check() as vc:` 包裹),
         顶层 await 直接可用。小范围验证/试错优先用 debug_code
         只跑最小代码块, 代码块拼接完成后再用本工具整体运行确认与正式抓取。
+        人机验证(滑块/我是真人/点选等)运行期过检: 把易触发验证的动作(登录提交、
+        翻页/加载更多等)包进 `async with verify_check(...)`——触发即在运行中自动尝试通过,
+        不弹窗; 限次未过抛 VerificationFailed 结束本次运行; 按页降级用外层
+        try/except VerificationFailed 捕获后跳过该页(详见 verify_check 用法)。
         restart=False 时复用当前浏览器(不重启), 保留登录态/已打开页面, 用于登录后
         探查凭据、注入测试等需在"同一浏览器内连续操作"的场景(见登录必选流程)。
         开发测试模式下数据量会被限制(save_content 列表截断为 max_items 条、

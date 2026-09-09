@@ -46,6 +46,8 @@ uv run pytest --cov=backend --cov-report=term   # coverage report
 - `Xvfb` display defaults to `:99`; backend auto-reuses existing Xvfb if `:99` is already held
 - Each `/run` request spins up a **fresh browser** with a new temp `user-data-dir` (non-incognito — incognito breaks the CDP Cookie API); Xvfb + capture are kept
 - Code execution sandbox: file I/O via `open`/`os`/`pathlib`/`shutil`/`subprocess`/`io`/`tempfile`/`glob`/`sys` etc. is blocked; only `save_content`/`save_page` write files
+- Injected env globals (no import): `page`/`context`/`browser` + `save_page`/`save_content`/`limit_items`/`get_login_ticket`/`set_login_ticket`/`page_login`/`capture_login_state`/`restore_login_state`/`verify_check`/`VerificationFailed`
+- **Human-verification** (human-verification-solution): Agent dev tools `detect_verification`/`solve_verification` (no popup; dev popup via `ask_user`); generated scripts must wrap risky code in `async with verify_check(...)` (auto-solves in-run, no popup; `VerificationFailed` ends the run on attempt exhaustion; page-level degradation via `try/except`). Backend: `backend/services/agent/verify/`; editor helper via LSP stub + frontend `pythonIntelliSense.ts`/`CodeEditor.tsx` placeholder (kept in sync manually)
 - **Dev limit** is ON by default (`--dev-limit`/`DEV_LIMIT=1`); `--no-dev-limit` for full data
 - `crawler_id` defaults to empty (Agent falls back to `"default"`); set via `--crawler-id` or `CRAWLER_ID` env var for login ticket / session isolation
 - Agent is a **unified session-based multi-turn chat** (no crawler/code type split); sessions + messages persist to MongoDB per `crawler_id`

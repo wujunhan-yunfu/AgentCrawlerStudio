@@ -516,6 +516,7 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
                 "set_login_ticket": env_obj.set_login_ticket,
                 "page_login": env_obj.page_login,
                 "verify_check": getattr(env_obj, "verify_check", None),
+                "VerificationFailed": VerificationFailed,
                 "capture_login_state": env_obj.capture_login_state,
                 "restore_login_state": env_obj.restore_login_state,
                 "__name__": "__main__",

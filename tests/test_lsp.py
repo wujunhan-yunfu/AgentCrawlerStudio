@@ -355,7 +355,7 @@ def test_lsp_session_doc_text(lsp_session):
     assert session._injected_text() == (
         "from xvfb_env import page, context, browser, save_page, save_content, "
         "limit_items, get_login_ticket, set_login_ticket, page_login, "
-        "capture_login_state, restore_login_state\nbody")
+        "capture_login_state, restore_login_state, verify_check, VerificationFailed\nbody")
 
 
 async def test_lsp_session_sync_doc(lsp_session):

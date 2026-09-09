@@ -297,12 +297,13 @@ function PlanBody({ plan }: { plan: AgentPlan | null }) {
   );
 }
 
-/** 运行中: 输入容器内的规划面板(向上展开时缩小输入框高度) */
+/** 运行中: 悬浮在输入框上方的规划面板; 顶部拖拽手柄可上下调整高度, 便于完整查看开发规划 */
 function PlanPanel({ plan, onClose }: {
   plan: Record<string, unknown> | null;
   onClose: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [height, setHeight] = useState<number | null>(null);
   const rawSteps = Array.isArray(plan?.steps) ? plan.steps : [];
   const steps = rawSteps.map((s) => {
     if (typeof s === "string") return { content: s, status: "pending" };
@@ -312,8 +313,45 @@ function PlanPanel({ plan, onClose }: {
   const inProgress = steps.filter((s) => s.status === "in_progress").length;
   const pct = steps.length ? Math.round((done / steps.length) * 100) : 0;
 
+  // 顶部手柄拖拽: 上拖放大 / 下拖缩小, 高度按父面板剩余空间钳制
+  const beginResize = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (collapsed) return;
+    e.preventDefault();
+    const panel = (e.currentTarget as HTMLElement).closest(".agent-panel") as HTMLElement | null;
+    const pane = (e.currentTarget as HTMLElement).closest(".plan-float") as HTMLElement | null;
+    if (!panel || !pane) return;
+    const startY = e.clientY;
+    const startH = pane.offsetHeight;
+    const titlebar = panel.querySelector(".agent-titlebar") as HTMLElement | null;
+    const input = panel.querySelector(".agent-input-bar") as HTMLElement | null;
+    const minH = 120;
+    const maxH = Math.max(
+      minH,
+      panel.clientHeight
+        - (titlebar?.offsetHeight ?? 0)
+        - (input?.offsetHeight ?? 0)
+        - 64,
+    );
+    const clamp = (h: number) => Math.max(minH, Math.min(maxH, h));
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    const onMove = (ev: MouseEvent) => setHeight(clamp(startH + (startY - ev.clientY)));
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   return (
-    <div className={`plan-float${collapsed ? " collapsed" : ""}`}>
+    <div
+      className={`plan-float${collapsed ? " collapsed" : ""}`}
+      style={!collapsed && height !== null ? { flex: `0 0 ${height}px`, maxHeight: height } : undefined}
+    >
+      <div className="plan-resize-handle" title="拖拽调整规划高度" onMouseDown={beginResize} />
       <div className="plan-float-head">
         <span className="plan-float-title">📋 爬取规划</span>
         {steps.length > 0 ? (
@@ -326,10 +364,10 @@ function PlanPanel({ plan, onClose }: {
         </span>
         <button
           className="plan-float-btn"
-          title={collapsed ? "展开" : "折叠"}
+          title={collapsed ? "展开规划" : "收起规划"}
           onClick={() => setCollapsed((c) => !c)}
         >
-          {collapsed ? "▾ 展开" : "▴ 折叠"}
+          {collapsed ? "▸ 展开" : "▾ 收起"}
         </button>
         <button className="plan-float-btn" title="关闭" onClick={onClose}>✕</button>
       </div>
@@ -1143,8 +1181,8 @@ export default function AgentPanel({
         )}
       </div>
 
+      {showPlan ? <PlanPanel plan={agent.plan} onClose={dismissPlan} /> : null}
       <div className="agent-input-bar">
-        {showPlan ? <PlanPanel plan={agent.plan} onClose={dismissPlan} /> : null}
         {hasSession && !busy && agent.activeSession ? (
           <span className="hint agent-done-hint">当前会话可继续发送消息进行多轮对话</span>
         ) : null}

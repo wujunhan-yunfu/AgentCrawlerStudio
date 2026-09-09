@@ -103,6 +103,8 @@ const DEFAULT_GLOBALS: Array<[string, string]> = [
   ["page_login", "object"],
   ["capture_login_state", "object"],
   ["restore_login_state", "object"],
+  ["verify_check", "object"],
+  ["VerificationFailed", "object"],
 ];
 
 // ---------------------------------------------------------------- tokenizer

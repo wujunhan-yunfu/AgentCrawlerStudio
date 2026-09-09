@@ -45,6 +45,8 @@ INJECTED_GLOBALS = (
     "page_login",
     "capture_login_state",
     "restore_login_state",
+    "verify_check",
+    "VerificationFailed",
 )
 
 ENV_STUB = """# page / context / browser
@@ -116,12 +118,48 @@ async def restore_login_state(state: dict) -> str:
     \"\"\"把登录态快照恢复进当前浏览器(含 cookies/localStorage/sessionStorage),
     新浏览器也可直接拿到登录态\"\"\"
     ...
+
+
+class _VerifyScope:
+    async def __aenter__(self) -> "_VerifyScope":
+        ...
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        ...
+
+    async def passed(self) -> bool:
+        \"\"\"显式等"绿灯"(当前无验证/已通过); 失败抛 VerificationFailed\"\"\"
+        ...
+
+    def status(self) -> dict:
+        \"\"\"运行状态: 监听中/尝试预算/已通过次数/最近结果/是否失败\"\"\"
+        ...
+
+
+def verify_check(timeout: float = 0,
+                 attempts: int | None = None,
+                 wait_on_exit: bool = True,
+                 hints: dict | None = None) -> "_VerifyScope":
+    \"\"\"人机验证常驻监听(运行期, 不弹窗): 把"可能触发验证的代码段"包进来。
+
+    用法:
+      async with verify_check() as vc:
+          await page.click(登录/提交/翻页等易触发动作)   # 触发即在运行中自动尝试通过
+          await vc.passed()                            # 可选: 显式等绿灯
+    验证触发后系统会自动尝试通过(滑块/我是真人/点选等); 单次触发在 attempts 次内
+    未通过会抛 VerificationFailed 直接结束本次运行(脚本终止返回明确错误)。
+    需要"按页降级"时, 在脚本外层 try/except VerificationFailed 捕获后跳过该页并记录,
+    再继续下一页。
+    参数: timeout 包裹段最长监听秒数(0=直到离开块); attempts 单次触发自动尝试上限
+    (默认配置 verify_max_attempts); wait_on_exit 离开块前复核是否已放行; hints 验证画像。
+    验证类型由大模型(规则辅助)判定, 可提供 hints(vendor/container/target/grid)加速\"\"\"
+    return _VerifyScope()
 """
 
 INJECTED_LINE = (
     "from xvfb_env import page, context, browser, "
     "save_page, save_content, limit_items, get_login_ticket, set_login_ticket, "
-    "page_login, capture_login_state, restore_login_state"
+    "page_login, capture_login_state, restore_login_state, verify_check, VerificationFailed"
 )
 
 # 命中这些模式的诊断会被过滤(注入全局的"未定义变量"提示)
