@@ -454,6 +454,7 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
         from .crawler import CrawlerEnv
         from .sandbox import safe_builtins
         from .agent.login import LoginCancelled
+        from .agent.verify.exceptions import VerificationFailed
 
         class _OutputTee:
             """捕获 stdout/stderr 的同时实时转发给回调, 兼容 redirect_stdout 接口。"""
@@ -514,6 +515,7 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
                 "get_login_ticket": env_obj.get_login_ticket,
                 "set_login_ticket": env_obj.set_login_ticket,
                 "page_login": env_obj.page_login,
+                "verify_check": getattr(env_obj, "verify_check", None),
                 "capture_login_state": env_obj.capture_login_state,
                 "restore_login_state": env_obj.restore_login_state,
                 "__name__": "__main__",
@@ -526,6 +528,10 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
             # 用户取消登录: 脚本立即终止, 返回明确结果而非异常堆栈
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": "用户取消登录", "saved": saved}
+        except VerificationFailed as exc:
+            # 产物运行期人机验证限次未通过: 本次运行直接结束(不弹窗)
+            saved = env_obj.saved_items() if env_obj is not None else []
+            return {"ok": False, "output": out.getvalue(), "error": str(exc), "saved": saved}
         except Exception:  # noqa: BLE001
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": traceback.format_exc(), "saved": saved}

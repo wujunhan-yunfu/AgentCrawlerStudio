@@ -19,6 +19,7 @@ from .editor import build_editor_tools
 from .http import build_http_tools
 from .planning import build_planning_tools
 from .save import build_save_tools
+from .verify import build_verify_tools
 
 
 def build_tools(
@@ -31,6 +32,7 @@ def build_tools(
     tools += build_save_tools(session)
     tools += build_planning_tools(session)
     tools += build_editor_tools(session, bridge, editor)
+    tools += build_verify_tools(bridge)
     return tools
 
 

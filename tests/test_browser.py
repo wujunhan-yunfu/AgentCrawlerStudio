@@ -924,6 +924,29 @@ async def test_run_code_login_cancelled(stream, monkeypatch):
     assert len(res["saved"]) == 1
 
 
+async def test_run_code_verification_failed(stream, monkeypatch):
+    """产物运行期人机验证限次未通过 → 本次运行直接终止(VerificationFailed)。"""
+    from backend.services.agent.verify.exceptions import VerificationFailed
+
+    import backend.services.crawler as cmod
+
+    class VerifyFailEnv(_FullFakeEnv):
+        async def verify_check(self, **kw):
+            raise VerificationFailed("人机验证在 3 次内未通过(checkbox): 仍在拦截",
+                                     type="checkbox", attempts=3, reason="仍在拦截")
+
+        def saved_items(self):
+            return [{"id": "1", "name": "x"}]
+
+    monkeypatch.setattr(stream, "restart_chrome", _AsyncNoop)
+    monkeypatch.setattr(stream, "_pw", _make_fake_pw)
+    monkeypatch.setattr(cmod, "CrawlerEnv", VerifyFailEnv)
+    res = await stream.run_code("await verify_check()")
+    assert res["ok"] is False
+    assert "人机验证在 3 次内未通过" in res["error"]
+    assert "Traceback" not in res["error"]
+
+
 # --------------------------------------------------------------------------- helpers
 
 

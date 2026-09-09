@@ -36,7 +36,10 @@ async def test_build_tools_returns_all():
     assert "get_editor_code" in names
     assert "debug_code" in names
     assert "set_editor_code" in names
-    assert len(tools) == 12
+    assert "detect_verification" in names
+    assert "solve_verification" in names
+    assert "verify_status" in names
+    assert len(tools) == 15
 
 
 # --------------------------------------------------------------------------- build_agent

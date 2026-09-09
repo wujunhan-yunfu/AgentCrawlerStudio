@@ -37,6 +37,14 @@ class Config:
     dev_limit: bool = True
     max_items: int = 50
     max_bytes: int = 512 * 1024
+    verify_enabled: bool = True            # 人机验证处理总开关
+    verify_max_attempts: int = 3           # 单次验证触发的自动尝试上限
+    verify_slider_only_right: bool = True  # 无缺口纯滑块优先拖到最右
+    verify_vision_provider: str = ""       # 多模态模型 provider(类型判定/点选共用)
+    verify_vision_model: str = ""          # 看图模型名(可空)
+    verify_vision_base_url: str = ""       # 多模态模型兼容网关
+    verify_rule_fallback: bool = True      # 无视觉模型时允许规则强命中兜底
+    verify_runtime_exit: bool = True       # 产物运行期超限即结束本次运行
 
 
 def find_chrome() -> str:
@@ -110,6 +118,31 @@ def build_config() -> Config:
     parser.add_argument("--max-bytes", type=int,
                         default=int(os.environ.get("MAX_BYTES", str(512 * 1024))),
                         help="开发模式单次保存(save_content 文本 / save_page HTML)的最大字节数")
+    parser.add_argument("--verify-enabled", dest="verify_enabled",
+                        action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("VERIFY_ENABLED", "1") != "0",
+                        help="人机验证处理总开关(默认开启)")
+    parser.add_argument("--verify-max-attempts", type=int,
+                        default=int(os.environ.get("VERIFY_MAX_ATTEMPTS", "3")),
+                        help="单次验证触发的自动尝试上限")
+    parser.add_argument("--verify-slider-only-right", dest="verify_slider_only_right",
+                        action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("VERIFY_SLIDER_ONLY_RIGHT", "1") != "0",
+                        help="无缺口纯滑块优先拖到最右")
+    parser.add_argument("--verify-vision-provider", default=os.environ.get("VERIFY_VISION_PROVIDER", ""),
+                        help="多模态模型 provider(类型判定/点选共用, 可空)")
+    parser.add_argument("--verify-vision-model", default=os.environ.get("VERIFY_VISION_MODEL", ""),
+                        help="看图模型名(可空; 空则按规则/主模型判定)")
+    parser.add_argument("--verify-vision-base-url", default=os.environ.get("VERIFY_VISION_BASE_URL", ""),
+                        help="多模态模型兼容网关 base URL")
+    parser.add_argument("--verify-rule-fallback", dest="verify_rule_fallback",
+                        action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("VERIFY_RULE_FALLBACK", "1") != "0",
+                        help="无视觉模型时允许规则强命中兜底判定")
+    parser.add_argument("--no-verify-runtime-exit", dest="verify_runtime_exit",
+                        action="store_false",
+                        default=os.environ.get("VERIFY_RUNTIME_EXIT", "1") != "0",
+                        help="产物运行期超限不结束本次运行(调试用, 仍不弹窗)")
     args = parser.parse_args()
     api_prefix = _norm_prefix(args.api_prefix, default="")
     web_prefix = _norm_prefix(args.web_prefix, default="/")
@@ -136,4 +169,12 @@ def build_config() -> Config:
         dev_limit=args.dev_limit,
         max_items=args.max_items,
         max_bytes=args.max_bytes,
+        verify_enabled=args.verify_enabled,
+        verify_max_attempts=args.verify_max_attempts,
+        verify_slider_only_right=args.verify_slider_only_right,
+        verify_vision_provider=args.verify_vision_provider,
+        verify_vision_model=args.verify_vision_model,
+        verify_vision_base_url=args.verify_vision_base_url,
+        verify_rule_fallback=args.verify_rule_fallback,
+        verify_runtime_exit=args.verify_runtime_exit,
     )

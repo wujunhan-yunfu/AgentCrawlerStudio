@@ -22,6 +22,7 @@ import asyncio
 import json
 import shutil
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from itertools import islice
 from typing import Any, Iterator
@@ -423,6 +424,42 @@ class CrawlerEnv:
             "url": url,
             "error": "",
         }
+
+    # ---------------------------------------------------------- 人机验证(产物运行期, 不弹窗)
+
+    @asynccontextmanager
+    async def verify_check(
+        self,
+        timeout: float = 0,
+        attempts: int | None = None,
+        wait_on_exit: bool = True,
+        hints: dict[str, Any] | None = None,
+        classifier: Any = None,
+    ):
+        """把"可能触发人机验证的代码段"包进 `async with verify_check(...)` 常驻监听。
+
+        验证触发即在运行中自动尝试通过(不弹任何窗口); 单次触发在限定尝试次数内未通过
+        抛 VerificationFailed, 由 run_code 顶层捕获结束本次运行(见 verify/scope.py)。
+        - timeout: 包裹段最长监听时长(秒, 0=直到离开块);
+        - attempts: 单次验证触发的自动尝试上限(默认取配置 verify_max_attempts);
+        - wait_on_exit: 离开 with 前复核, 仍被拦截则在剩余预算内再解;
+        - hints: 开发期采集的验证画像(当前用于记录/日志, 可空);
+        - classifier: 可选注入的判定器(测试/扩展用)。
+        返回作用域对象 vc, 提供 vc.passed()(显式等绿灯)与 vc.status()。
+        """
+        from .agent.verify.scope import VerifyScope
+
+        scope = VerifyScope(
+            self.cfg,
+            self.page,
+            timeout=timeout,
+            attempts=attempts,
+            wait_on_exit=wait_on_exit,
+            hints=hints or {},
+            classifier=classifier,
+        )
+        async with scope as vc:
+            yield vc
 
     # ---------------------------------------------------------- 登录态快照(Application>Storage)
 
