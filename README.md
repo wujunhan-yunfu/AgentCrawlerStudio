@@ -465,7 +465,7 @@ uv run pytest --cov=backend --cov-report=term   # 覆盖率报告 (90%+)
 
 ## 📄 License
 
-本项目目前未附带 `LICENSE` 文件，暂未开放分发。正式开源前请补充 LICENSE（推荐 MIT）。
+本项目采用 [MIT License](./LICENSE)。
 
 ---
 
