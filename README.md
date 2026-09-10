@@ -45,6 +45,7 @@
   - [登录凭据复用](#登录凭据复用)
   - [浏览器远程控制](#浏览器远程控制)
   - [源码版本管理](#源码版本管理)
+  - [导出脚本（独立运行包）](#导出脚本独立运行包)
   - [爬虫 Agent](#爬虫-agent)
 - [🧪 测试](#-测试)
 - [❓ 常见问题](#-常见问题)
@@ -65,6 +66,7 @@
 | **DevTools 面板** | Console / Elements / Network / Application 四个面板贴近 Chrome DevTools |
 | **代码辅助** | black 格式化、isort 整理导入、auto-import 快速修复、inlay hints |
 | **源码版本管理** | 编辑器代码按 `crawler_id` 提交 / 历史 / 检出（MongoDB 持久化提交），未提交草稿存于浏览器 localStorage，刷新时与远端变更自动三方合并 |
+| **导出脚本** | 编辑器代码一键导出为可直接 `uv` 运行的独立工程 zip（pyproject.toml + README + main.py + runtime），支持立即运行 / cron 定时运行与 cron 校验 |
 | **爬虫 Agent** | 会话式多轮对话，自动规划 → 调试 → 写回脚本，支持交互式登录 |
 | **登录凭据复用** | ticket 按 host + crawler_id 存 MongoDB，登录一次自动复用 |
 
@@ -122,7 +124,7 @@
 # Debian/Ubuntu
 apt install xvfb chromium fonts-noto-cjk
 # Fedora/Rocky
-dnf install xvfb chromium google-noto-sans-cjk-ttc-fonts
+dnf install xorg-x11-server-Xvfb chromium google-noto-sans-cjk-ttc-fonts
 ```
 
 ### 安装与启动
@@ -176,6 +178,8 @@ backend/
 │   ├── crawler.py   #   代码执行环境注入的爬虫默认函数(save_page/save_content/登录凭据等)
 │   ├── sandbox.py   #   受限沙箱 safe_builtins: 禁 open/os/pathlib/shutil/subprocess 等
 │   ├── save.py      #   save_content 多格式序列化(txt/json/jsonl/csv/img)与字节截断
+│   ├── cron.py      #   cron 表达式校验与下次运行时间(纯标准库, 导出包内复用同一份源码)
+│   ├── exporter.py  #   导出独立运行包: 组装 uv 工程 zip(pyproject.toml/README/main/runtime/crawler)
 │   └── agent/       #   爬虫 Agent: agent(create_deep_agent) runner(会话编排/事件持久化)
 │                      #   core/(LLM + 虚拟文件系统) session/(store/event/model) tools/(浏览器/HTTP/
 │                      #   编辑器/规划/保存) login + run_login(登录闸口) middleware prompts checkpointer
@@ -184,6 +188,7 @@ backend/
     ├── control.py   #   /status /pages /navigate /screenshot /run(SSE) /restart /console/* /network/* /dom/* /storage/* /format /organize-imports
     ├── input.py     #   /ws/input (远程操控双向 WebSocket)
     ├── versions.py  #   /code/repo /code/commit /code/commits /code/checkout (源码版本)
+    ├── export.py    #   /code/validate-cron /code/export (cron 校验 + 导出独立运行包)
     ├── lsp.py       #   /ws/lsp WebSocket + /lsp/info
     ├── stream.py    #   /ws/live + /ws/console + /ws/network + /ws/dom + /ws/storage + /live.mjpg
     └── agent.py     #   Agent 会话管理 / 多轮对话 / 问卷 / 登录 / /ws/agent / /editor/code
@@ -286,6 +291,8 @@ backend/
 | GET | `/api/v1/code/commits` | 提交历史（按时间倒序, 可选 `before` 分页）, 每条含相对父提交的增删统计 |
 | GET | `/api/v1/code/commits/{commit_id}` | 单次提交详情（含全量源码, 供检出/对比） |
 | POST | `/api/v1/code/checkout` | 检出某次提交内容到工作区（不动 HEAD） |
+| POST | `/api/v1/code/validate-cron` | 校验 cron 表达式, 合法时返回接下来 5 次运行时间 |
+| POST | `/api/v1/code/export` | 把编辑器代码导出为可直接 `uv` 运行的独立 zip 包（含 pyproject.toml / README / main.py） |
 | WS  | `/api/v1/ws/lsp` | LSP WebSocket: 桥接 pyright, 提供补全/悬停/签名/诊断/定义跳转 |
 | GET | `/api/v1/lsp/info` | LSP 工作区信息, 前端据此建立模型 URI |
 | POST | `/api/v1/format` | 用 black 格式化 Python 代码 |
@@ -457,6 +464,38 @@ if not logged_in:                                   # 取不到 / 凭据失效 �
 - Agent `set_editor_code` 写回的代码会进入工作区成为"未提交变更"，可在面板中直接提交。
 
 配套接口：`/api/v1/code/repo`、`/api/v1/code/commit`、`/api/v1/code/commits`、`/api/v1/code/commits/{commit_id}`、`/api/v1/code/checkout`。
+
+### 导出脚本（独立运行包）
+
+输出栏的 **"导出脚本"** 按钮把编辑器中的当前代码打包为一个**可直接用 uv 运行的独立工程 zip**。弹窗内可填写包名，并可选填 **cron 表达式**（点"校验"即时校验并预览接下来 5 次运行时间）。填写后该表达式成为导出包的默认 cron 值，运行时 `--cron` 可省略表达式；留空则运行时必须用 `--cron` 提供。
+
+导出包结构：
+
+```
+<crawler>/
+├── pyproject.toml # uv 工程定义(依赖 playwright)
+├── README.md      # 运行说明(立即运行 / 定时运行 / cron 校验)
+├── main.py        # 入口: 立即运行或按 cron 定时运行
+├── runtime.py     # Playwright 运行环境与注入函数(page/context/browser + save_* 等)
+├── crawler.py     # 编辑器中的脚本(原样)
+└── cron.py        # cron 表达式校验(纯标准库)
+```
+
+解压后运行：
+
+```bash
+uv sync
+uv run playwright install chromium
+
+uv run python main.py                        # 立即运行一次
+uv run python main.py --cron "*/5 * * * *"   # 按 cron 定时运行(先校验)
+uv run python main.py --cron                 # 使用导出时配置的默认表达式(未配置则报错)
+uv run python main.py --validate-cron "0 8 * * *"  # 仅校验并预览下次运行时间
+```
+
+`main.py` 支持 `--headless` / `--dev-limit` / `--max-items` / `--max-bytes` 等参数；脚本内可直接使用 `page` / `context` / `browser` 与 `save_page` / `save_content` / `limit_items` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`，保存内容输出到 `output/`（登录凭据存本地 `login_tickets.json`）。cron 表达式支持 `*` `,` `-` `/`、`JAN-DEC` / `SUN-SAT` 及 `@daily` 等宏。
+
+配套接口：`/api/v1/code/validate-cron`、`/api/v1/code/export`。
 
 ### 爬虫 Agent
 

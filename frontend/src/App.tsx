@@ -5,6 +5,7 @@ import type { PanelKey } from "./types";
 import type { HighlightBox } from "./components/ElementsPanel";
 import ActivityBar from "./components/ActivityBar";
 import CodeEditor from "./components/CodeEditor";
+import ExportDialog from "./components/ExportDialog";
 import LiveView from "./components/LiveView";
 import OutputBar from "./components/OutputBar";
 import Sidebar from "./components/Sidebar";
@@ -48,6 +49,7 @@ export default function App() {
   const activePanelRef = useRef<PanelKey | null>(null);
   const lastPanelRef = useRef<PanelKey | null>(null);
   const [liveMaximized, setLiveMaximized] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const lastSyncedRef = useRef("");
   const codeRef = useRef(DEFAULT_CODE);
@@ -380,6 +382,7 @@ export default function App() {
         onStop={handleStop}
         onFormat={handleFormat}
         onOrganizeImports={handleOrganizeImports}
+        onExport={() => setExportOpen(true)}
         output={output}
         pending={pending}
         error={error}
@@ -439,6 +442,9 @@ export default function App() {
         </div>
       ) : null}
       {kicked ? <div className="kicked-banner">连接已由其他窗口接管，本窗口已断开。刷新页面可重新连接。</div> : null}
+      {exportOpen ? (
+        <ExportDialog code={code} onClose={() => setExportOpen(false)} onError={setError} />
+      ) : null}
     </div>
   );
 }

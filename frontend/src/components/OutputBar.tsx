@@ -18,6 +18,7 @@ interface Props {
   onStop: () => void;
   onFormat: () => void;
   onOrganizeImports?: () => void;
+  onExport?: () => void;
   output: RunOutputLine[];
   pending: RunOutputLine | null;
   error: string;
@@ -50,6 +51,7 @@ export default function OutputBar({
   onStop,
   onFormat,
   onOrganizeImports,
+  onExport,
   output,
   pending,
   error,
@@ -218,6 +220,11 @@ export default function OutputBar({
           {onOrganizeImports ? (
             <button onClick={onOrganizeImports} title="Shift+Alt+O">
               整理导入
+            </button>
+          ) : null}
+          {onExport ? (
+            <button onClick={onExport} title="导出为可独立运行的 uv 工程包">
+              导出脚本
             </button>
           ) : null}
           <button

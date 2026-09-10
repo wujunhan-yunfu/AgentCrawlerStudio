@@ -282,3 +282,21 @@ class CodeCheckoutResult(BaseModel):
     ok: bool
     commit_id: str
     code: str
+
+
+class ExportRequest(BaseModel):
+    """把编辑器代码导出为可直接运行的独立包。"""
+
+    code: str = Field(..., description="编辑器中的完整脚本")
+    name: str = Field(default="", max_length=64, description="导出包名(缺省 crawler)")
+    cron: str = Field(default="", max_length=128, description="可选默认 cron 表达式")
+
+
+class ValidateCronRequest(BaseModel):
+    expression: str = Field(default="", max_length=128, description="待校验的 cron 表达式")
+
+
+class ValidateCronResult(BaseModel):
+    ok: bool
+    error: str = ""
+    next_runs: list[int] = Field(default_factory=list, description="接下来 5 次运行时间(毫秒时间戳)")

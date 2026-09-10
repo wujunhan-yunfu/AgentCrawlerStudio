@@ -474,6 +474,42 @@ export function codeCheckout(
   return post("/code/checkout", { commit_id: commitId, crawler_id: crawlerId });
 }
 
+/* ---------------- 导出脚本 ---------------- */
+
+export interface ValidateCronResult {
+  ok: boolean;
+  error: string;
+  next_runs: number[];
+}
+
+export function validateCron(expression: string): Promise<ValidateCronResult> {
+  return post<ValidateCronResult>("/code/validate-cron", { expression });
+}
+
+/** 导出独立运行包(zip), 返回二进制 Blob。 */
+export async function exportScript(opts: {
+  code: string;
+  name?: string;
+  cron?: string;
+}): Promise<Blob> {
+  const r = await fetch(api("/code/export"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    let detail = text;
+    try {
+      detail = (JSON.parse(text) as { detail?: string }).detail || text;
+    } catch {
+      /* 非 JSON 错误体 */
+    }
+    throw new Error(detail || `导出失败: HTTP ${r.status}`);
+  }
+  return r.blob();
+}
+
 export function agentWsUrl(): string {
   const url = api("/ws/agent");
   return url.replace(/^http/, "ws");

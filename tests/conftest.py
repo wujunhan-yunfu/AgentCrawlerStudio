@@ -614,6 +614,7 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     from backend.routers import agent as agent_router
     from backend.routers import console as console_router
     from backend.routers import control as control_router
+    from backend.routers import export as export_router
     from backend.routers import input as input_router
     from backend.routers import lsp as lsp_router
     from backend.routers import stream as stream_router
@@ -645,6 +646,7 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
     app.include_router(stream_router.router, prefix=cfg.api_prefix)
     app.include_router(agent_router.router, prefix=cfg.api_prefix)
     app.include_router(versions_router.router, prefix=cfg.api_prefix)
+    app.include_router(export_router.router, prefix=cfg.api_prefix)
     if cfg.web_prefix != "/":
         app.add_api_route(f"{cfg.web_prefix}", console_router.index, methods=["GET"])
         app.add_api_route(f"{cfg.web_prefix}/", console_router.index, methods=["GET"])

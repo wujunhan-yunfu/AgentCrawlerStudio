@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .config import STATIC_DIR, Config, build_config
-from .routers import agent, console, control, input, lsp, stream, versions
+from .routers import agent, console, control, export, input, lsp, stream, versions
 from .services.agent.core import (
     AGENT_BACKEND_DIR,
     AGENT_SAVED_DIR,
@@ -75,6 +75,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     app.include_router(stream.router, prefix=cfg.api_prefix)
     app.include_router(agent.router, prefix=cfg.api_prefix)
     app.include_router(versions.router, prefix=cfg.api_prefix)
+    app.include_router(export.router, prefix=cfg.api_prefix)
     if cfg.web_prefix != "/":
         app.add_api_route(f"{cfg.web_prefix}", console.index, methods=["GET"])
         app.add_api_route(f"{cfg.web_prefix}/", console.index, methods=["GET"])

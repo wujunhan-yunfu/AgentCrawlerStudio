@@ -3856,3 +3856,149 @@ button.primary {
   color: #fff;
   cursor: pointer;
 }
+
+/* 导出脚本弹窗: 包名 + 可选 cron 校验 + 导出 zip */
+.export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.export-card {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  background: rgba(28, 29, 34, 0.97);
+  backdrop-filter: blur(6px);
+  border: 1px solid #9d7cd8;
+  border-radius: 6px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  padding: 16px 18px;
+  user-select: none;
+}
+
+.export-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #eeeeee;
+  margin-bottom: 8px;
+}
+
+.export-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #9aa0a6;
+  margin-bottom: 14px;
+}
+
+.export-field {
+  margin-bottom: 12px;
+}
+
+.export-label {
+  font-size: 12px;
+  color: #bbbbbb;
+  margin-bottom: 5px;
+}
+
+.export-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #3c3c3c;
+  border-radius: 2px;
+  background: #1e1e1e;
+  color: #eeeeee;
+}
+
+.export-cron-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.export-cron-row .export-input {
+  flex: 1;
+}
+
+.export-cron-row button {
+  flex: none;
+  padding: 6px 14px;
+  font-size: 12px;
+  border: 1px solid #3c3c3c;
+  border-radius: 2px;
+  background: #1e1e1e;
+  color: #eeeeee;
+  cursor: pointer;
+}
+
+.export-cron-row button:hover {
+  background: #2a2a2e;
+}
+
+.export-cron-row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.export-hint {
+  font-size: 11px;
+  color: #7a7f87;
+  margin-top: 5px;
+  line-height: 1.5;
+}
+
+.export-ok {
+  font-size: 12px;
+  color: #6fcf97;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
+.export-err {
+  font-size: 12px;
+  color: #f48771;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.export-actions button {
+  padding: 6px 14px;
+  font-size: 12px;
+  border: 1px solid #3c3c3c;
+  border-radius: 2px;
+  background: #1e1e1e;
+  color: #eeeeee;
+  cursor: pointer;
+}
+
+.export-actions button:hover {
+  background: #2a2a2e;
+}
+
+.export-actions button.primary {
+  background: #9d7cd8;
+  color: #fff;
+  border-color: #9d7cd8;
+}
+
+.export-actions button.primary:hover {
+  background: #8a6cc9;
+}
+
+.export-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
