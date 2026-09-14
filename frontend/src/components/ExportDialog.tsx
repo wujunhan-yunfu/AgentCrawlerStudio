@@ -16,6 +16,7 @@ function fmtTime(ms: number): string {
 export default function ExportDialog({ code, onClose, onError }: Props) {
   const [name, setName] = useState("crawler");
   const [cron, setCron] = useState("");
+  const [headless, setHeadless] = useState(false);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
   const [exportError, setExportError] = useState("");
@@ -54,7 +55,7 @@ export default function ExportDialog({ code, onClose, onError }: Props) {
     setBusy(true);
     setExportError("");
     try {
-      const blob = await exportScript({ code, name: name.trim(), cron: cron.trim() });
+      const blob = await exportScript({ code, name: name.trim(), cron: cron.trim(), headless });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -119,6 +120,21 @@ export default function ExportDialog({ code, onClose, onError }: Props) {
               <div className="export-err">表达式无效: {checkResult.error}</div>
             )
           ) : null}
+        </div>
+
+        <div className="export-field">
+          <label className="export-check">
+            <input
+              type="checkbox"
+              checked={headless}
+              onChange={(e) => setHeadless(e.target.checked)}
+            />
+            <span>默认无头模式运行(headless)</span>
+          </label>
+          <div className="export-hint">
+            勾选则脚本默认无头运行; 取消则默认有头(可见浏览器窗口, 便于人工扫码/登录)。
+            运行时可用 --headless / --no-headless 覆盖。
+          </div>
         </div>
 
         {exportError ? <div className="export-err">导出失败: {exportError}</div> : null}

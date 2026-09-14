@@ -290,6 +290,7 @@ class ExportRequest(BaseModel):
     code: str = Field(..., description="编辑器中的完整脚本")
     name: str = Field(default="", max_length=64, description="导出包名(缺省 crawler)")
     cron: str = Field(default="", max_length=128, description="可选默认 cron 表达式")
+    headless: bool = Field(default=False, description="导出脚本 --headless 的默认值")
 
 
 class ValidateCronRequest(BaseModel):

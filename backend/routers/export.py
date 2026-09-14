@@ -41,6 +41,7 @@ async def export_code(req: ExportRequest) -> Response:
             req.code,
             name=req.name or "",
             cron=req.cron or "",
+            headless=req.headless,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

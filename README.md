@@ -66,7 +66,7 @@
 | **DevTools 面板** | Console / Elements / Network / Application 四个面板贴近 Chrome DevTools |
 | **代码辅助** | black 格式化、isort 整理导入、auto-import 快速修复、inlay hints |
 | **源码版本管理** | 编辑器代码按 `crawler_id` 提交 / 历史 / 检出（MongoDB 持久化提交），未提交草稿存于浏览器 localStorage，刷新时与远端变更自动三方合并 |
-| **导出脚本** | 编辑器代码一键导出为可直接 `uv` 运行的独立工程 zip（pyproject.toml + README + main.py + runtime），支持立即运行 / cron 定时运行与 cron 校验 |
+| **导出脚本** | 编辑器代码一键导出为可直接 `uv` 运行的独立工程 zip（pyproject.toml + README + main.py + runtime），不依赖 Xvfb，支持立即运行 / cron 定时运行与 cron 校验，可选无头 / 有头默认模式 |
 | **爬虫 Agent** | 会话式多轮对话，自动规划 → 调试 → 写回脚本，支持交互式登录 |
 | **登录凭据复用** | ticket 按 host + crawler_id 存 MongoDB，登录一次自动复用 |
 
@@ -467,7 +467,9 @@ if not logged_in:                                   # 取不到 / 凭据失效 �
 
 ### 导出脚本（独立运行包）
 
-输出栏的 **"导出脚本"** 按钮把编辑器中的当前代码打包为一个**可直接用 uv 运行的独立工程 zip**。弹窗内可填写包名，并可选填 **cron 表达式**（点"校验"即时校验并预览接下来 5 次运行时间）。填写后该表达式成为导出包的默认 cron 值，运行时 `--cron` 可省略表达式；留空则运行时必须用 `--cron` 提供。
+输出栏的 **"导出脚本"** 按钮把编辑器中的当前代码打包为一个**可直接用 uv 运行的独立工程 zip**。弹窗内可填写包名、可选填 **cron 表达式**（点"校验"即时校验并预览接下来 5 次运行时间），并选择脚本 `--headless` 的**默认值**。cron 填写后即成为导出包默认值，运行时 `--cron` 可省略表达式；留空则运行时必须用 `--cron` 提供。
+
+导出脚本**直接使用 Playwright 自带的无头 / 有头浏览器，不依赖 Xvfb**。默认无头或有头由导出时选择（嵌入 `DEFAULT_HEADLESS`），运行时可用 `--headless` / `--no-headless` 覆盖。`page_login` **不弹任何窗口**：仅在终端打印扫码 / 登录提示，请用户在浏览器窗口中扫码或输入账号完成登录，脚本轮询页面跳转、检测到登录完成后自动继续（需要人工登录时请用有头模式 `--no-headless`）。
 
 导出包结构：
 
@@ -477,9 +479,11 @@ if not logged_in:                                   # 取不到 / 凭据失效 �
 ├── README.md      # 运行说明(立即运行 / 定时运行 / cron 校验)
 ├── main.py        # 入口: 立即运行或按 cron 定时运行
 ├── runtime.py     # Playwright 运行环境与注入函数(page/context/browser + save_* 等)
-├── crawler.py     # 编辑器中的脚本(原样)
+├── crawler.py     # 编辑器脚本(包成 async def run(...), 由 main.py 直接 import 运行)
 └── cron.py        # cron 表达式校验(纯标准库)
 ```
+
+导出时会把脚本包成 `crawler.py` 中可直接导入的 `async def run(page, context, ...)` 函数（不再以字符串 `exec` 运行），并**静态扫描脚本中的 `import`，把检测到的第三方依赖自动追加到 `pyproject.toml`**（`bs4`→`beautifulsoup4`、`PIL`→`pillow` 等常见别名会自动归一化）。
 
 解压后运行：
 
@@ -493,7 +497,7 @@ uv run python main.py --cron                 # 使用导出时配置的默认表
 uv run python main.py --validate-cron "0 8 * * *"  # 仅校验并预览下次运行时间
 ```
 
-`main.py` 支持 `--headless` / `--dev-limit` / `--max-items` / `--max-bytes` 等参数；脚本内可直接使用 `page` / `context` / `browser` 与 `save_page` / `save_content` / `limit_items` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`，保存内容输出到 `output/`（登录凭据存本地 `login_tickets.json`）。cron 表达式支持 `*` `,` `-` `/`、`JAN-DEC` / `SUN-SAT` 及 `@daily` 等宏。
+`main.py` 支持 `--headless` / `--no-headless` / `--dev-limit` / `--max-items` / `--max-bytes` 等参数；脚本内可直接使用 `page` / `context` / `browser` 与 `save_page` / `save_content` / `limit_items` / `page_login` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`，保存内容输出到 `output/`（登录凭据存本地 `login_tickets.json`）。cron 表达式支持 `*` `,` `-` `/`、`JAN-DEC` / `SUN-SAT` 及 `@daily` 等宏。
 
 配套接口：`/api/v1/code/validate-cron`、`/api/v1/code/export`。
 

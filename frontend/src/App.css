@@ -3945,6 +3945,19 @@ button.primary {
   cursor: not-allowed;
 }
 
+.export-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #dddddd;
+  cursor: pointer;
+}
+
+.export-check input {
+  cursor: pointer;
+}
+
 .export-hint {
   font-size: 11px;
   color: #7a7f87;

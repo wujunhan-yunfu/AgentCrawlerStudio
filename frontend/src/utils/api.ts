@@ -491,6 +491,7 @@ export async function exportScript(opts: {
   code: string;
   name?: string;
   cron?: string;
+  headless?: boolean;
 }): Promise<Blob> {
   const r = await fetch(api("/code/export"), {
     method: "POST",

@@ -50,6 +50,16 @@ async def test_export_ok(client):
     assert "demo/main.py" in zf.namelist()
 
 
+async def test_export_headless_default(client):
+    resp = await client.post(
+        "/api/v1/code/export",
+        json={"code": "print('hi')\n", "name": "demo", "headless": True},
+    )
+    assert resp.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    assert "DEFAULT_HEADLESS = True" in zf.read("demo/main.py").decode()
+
+
 async def test_export_empty_code(client):
     resp = await client.post("/api/v1/code/export", json={"code": "   ", "name": "demo"})
     assert resp.status_code == 400
