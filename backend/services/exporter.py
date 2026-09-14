@@ -541,9 +541,25 @@ async def run_script(
     env_obj: RuntimeEnv | None = None
     try:
         pw = await async_playwright().start()
-        browser = await pw.chromium.launch(headless=headless, args=["--no-sandbox"])
+        browser = await pw.chromium.launch(
+            headless=headless,
+            args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+        )
         context = await browser.new_context()
         page = await context.new_page()
+        # 部分站点(如大商所)有动态防护, 会检测自动化标识(navigator.webdriver)与
+        # 无头 UA(HeadlessChrome)并返回空响应。启动参数已禁用 AutomationControlled,
+        # 这里再把 UA 中的 Headless 标记去掉, 使其与普通浏览器一致。
+        try:
+            real_ua = (await page.evaluate("navigator.userAgent")).replace(
+                "HeadlessChrome", "Chrome"
+            )
+            if real_ua and "Headless" not in real_ua:
+                await context.close()
+                context = await browser.new_context(user_agent=real_ua)
+                page = await context.new_page()
+        except Exception:  # noqa: BLE001
+            pass
         env_obj = RuntimeEnv(
             page, context, browser, dev_limit, max_items, max_bytes, headless=headless
         )

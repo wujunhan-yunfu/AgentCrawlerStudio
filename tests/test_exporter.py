@@ -155,6 +155,14 @@ def test_build_package_invalid_cron():
         build_package("x = 1\n", name="demo", cron="not a cron")
 
 
+def test_runtime_masks_automation_signals():
+    _, data = build_package("x = 1\n", name="demo")
+    runtime = _zip(data).read("demo/runtime.py").decode()
+    assert "--disable-blink-features=AutomationControlled" in runtime
+    assert '"HeadlessChrome", "Chrome"' in runtime
+    assert "user_agent=real_ua" in runtime
+
+
 def test_generated_python_compiles(tmp_path):
     _, data = build_package("await page.goto('https://example.com')\n", name="demo")
     _zip(data).extractall(tmp_path)
