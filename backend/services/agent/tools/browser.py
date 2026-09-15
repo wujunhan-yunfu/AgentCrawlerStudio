@@ -117,6 +117,9 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         save_page 按 max_bytes 截断), 遍历爬取时应先用 limit_items(items)
         限制循环长度, 避免运行过长或 token 过多; 上线时会取消该限制。
         代码里的 print 输出会随结果返回, 保存的内容也会被记录。
+        保存纪律: 用户未明确要求时每个页面/同一份数据只保存一次, 默认用 JSON 一种格式
+        (save_content fmt="json"), 仅当 JSON 无法表达或用户明确指定时才改用其它格式;
+        直接抓取多媒体文件时转 base64 存入 JSON 并附源文件地址。
         脚本内可直接调用 page_login(method) 引导用户交互登录(扫码/账密/验证码),
         method 必填且必须显式指定 qr/account/sms 之一, 不支持 auto;
         以及 get_login_ticket(host) / set_login_ticket(ticket, host)
