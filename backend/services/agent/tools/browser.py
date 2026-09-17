@@ -133,12 +133,18 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
          登录成功后提取凭据建议用 `await capture_login_state()`(含 HttpOnly cookie 多路径
          采集 + credentials 分类, 覆盖 cookie 与 localStorage/sessionStorage 中的
          token/jwt, 鉴权头来源不一定是 cookie)。
+         保存凭据必须先过滤: 存储中的 cookie/storage 常混有临时凭据(一次性 nonce/防跨站
+         token)、已过期或即将过期的凭据、统计埋点类无关字段, 整套快照原样保存后下次注入
+         会导致登录失败甚至被风控识别为异常; 应只保留真正出现在带权限请求里的鉴权凭据
+         (核心会话 cookie + token), 剔除统计/第三方域/空值 cookie 与无关 storage 键,
+         过滤后的凭据用 restart=True 全新浏览器注入验证无用户干预登录成功后再定稿保存。
         需要登录时脚本登录段必须按**登录必选流程**编写: 先 get_login_ticket(host) 复用凭据 →
         取到则访问目标站→注入→page.reload() 刷新生效→校验; 取不到或凭据失效(先清空已注入信息
         context.clear_cookies() / localStorage.clear())则 page_login 自动导航登录页交互登录 →
-        每次登录成功后都用 playwright 提取凭据并 set_login_ticket(ticket, host) 保存, 这样脚本
-        只需登录一次, 之后每次运行自动复用凭据。page_login 仅负责唤起用户登录, 不会自动保存凭据,
-        保存必须由业务代码显式调用 set_login_ticket 完成。
+         每次登录成功后都用 playwright 提取凭据(先过滤临时/失效/无关项, 再保存)并
+         set_login_ticket(ticket, host) 保存, 这样脚本
+         只需登录一次, 之后每次运行自动复用凭据。page_login 仅负责唤起用户登录, 不会自动保存凭据,
+         保存必须由业务代码显式调用 set_login_ticket 完成。
         注意: get_login_ticket 读取的凭据不完全可信, 注入刷新后需在目标站页面校验登录是否
         生效; 同一份旧凭据连续 3 次无法正常登录应立即弃用并清空注入, 改走 page_login 重新登录。
         Args:

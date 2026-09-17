@@ -233,9 +233,9 @@ plan 不只是给用户看的进度展示, 更是对你执行流程的硬性约�
     if not r.get("ok"): raise SystemExit(r.get("error"))
     → 走 4
 
-4) 每次登录成功必须保存: 用 playwright 提取登录态并 set_login_ticket 保存, 供下次复用
+4) 每次登录成功必须保存: 提取登录态 → **裁剪过滤(剔除临时/失效/无关凭据)** → set_login_ticket 保存
     cookies = await context.cookies()
-    await set_login_ticket(ticket=cookies, host="<目标站host>")
+    await set_login_ticket(ticket=cookies, host="<目标站host>")   # 保存前必须先过滤, 见「登录凭据过滤与最小化」
 ```
 
 代码骨架(严格按上述分支实现):
@@ -257,8 +257,11 @@ if not logged_in:                             # 取不到 / 凭据无效(2c) →
     r = await page_login(method="qr", ...)            # 3) page_login 自动导航登录页
     if not r.get("ok"):
         raise SystemExit(f"登录失败: {r.get('error')}")
-    # 4) 每次登录成功必须保存
-    cookies = await context.cookies()
+    # 4) 每次登录成功必须保存(先过滤临时/失效/无关凭据, 再保存, 见「登录凭据过滤与最小化」)
+    import re
+    _JUNK = re.compile(r"_ga|_gid|_hmt|hm_|__utm|_clck|tongji|statistic|analytics", re.I)
+    cookies = [c for c in await context.cookies()
+               if c.get("value") and not _JUNK.search(c.get("name", ""))]
     await set_login_ticket(ticket=cookies, host="example.com")
 ```
 
@@ -283,6 +286,13 @@ if not logged_in:                             # 取不到 / 凭据无效(2c) →
 > `page_login` 重新交互登录; 重新登录成功后用 `set_login_ticket` 覆盖写入新凭据。
 > 每次注入后都要在**目标站点页面**下校验登录是否真正生效(未跳回登录页 / 用户区出现 /
 > 带权限接口不再 401), 不要把"注入成功"当成"登录成功"。
+
+> **凭据保存必须过滤(硬性要求)**: `page_login` 登录成功后保存凭据时, **禁止把 cookie /
+> localStorage / sessionStorage 的整套快照原样保存**。存储里的内容并不一定全部有效,
+> 常混有**临时凭据(一次性 nonce / 防跨站 token)、已过期或即将过期的凭据、统计埋点类无关
+> 字段、空值/占位值**等。把无效或相互矛盾的凭据一并注入, 轻则下次登录失败, 重则因
+> "凭据状态与登录态不符 / 混入异常凭据"被目标站风控识别为异常。保存前必须先按
+> 「登录凭据过滤与最小化」裁剪过滤, 只保留真正让后端放行的鉴权凭据。
 
 ### 第一步: 判断是否需要登录及登录方式
 1. 用 `page_analyze` 看当前页面: 是否在登录页(URL 含 login/signin/auth/passport/登录)、
@@ -327,8 +337,8 @@ if not logged_in:                             # 取不到 / 凭据无效(2c) →
      补上登录页 URL 后重试, 不要继续硬调用;
 3. **每次 `page_login` 登录成功后, `page_login` 不会自动保存凭据, 必须用 playwright 提取登录态后
    显式 `set_login_ticket(ticket, host)` 保存**, 后续 `get_login_ticket` 才能复用。
-   保存时按需裁剪凭据集(如只存某几个 cookies / 排除 sessionStorage), 再显式传
-   `ticket=<自定义凭据>`:
+   保存时**必须先按「登录凭据过滤与最小化」裁剪过滤**(剔除临时/失效/统计埋点等无关项,
+   不能整套快照原样保存), 再显式传 `ticket=<自定义凭据>`:
    `await set_login_ticket(ticket=cookies, host="example.com")`。
 
 ### 第三步: 收尾
@@ -380,8 +390,10 @@ if not logged_in:                             # 取不到 / 凭据无效(2c) →
    await main()
    ```
 
-3. **最小化凭据集**: 依据第 2 步的判断, 保留真正必要的字段(核心鉴权 cookie、localStorage 的
-   token 等), 剔除无关大字段(如 sessionStorage、大块缓存), 缩小凭据范围。
+3. **过滤并最小化凭据集(保存前必须做)**: 依据第 2 步的判断, 按「登录凭据过滤与最小化」
+   的规则过滤——保留真正必要的字段(核心鉴权 cookie、localStorage 的 token 等),
+   剔除无效/临时项(已过期或空值 cookie、统计埋点类 cookie、一次性 nonce、大块缓存、
+   sessionStorage 等), 缩小凭据范围, **绝不整套快照原样保存**。
 
 4. **注入测试(会重启浏览器, 直到无用户干预登录成功)**:
    用 `browser_run_code(code, restart=True)` 重启全新浏览器做注入测试。**注入必须在目标站点
@@ -402,6 +414,59 @@ if not logged_in:                             # 取不到 / 凭据无效(2c) →
    若未登录成功, 调整凭据集(换更精确的 token / 只留核心 cookie / 改注入时机与域)重试,
    **直到新浏览器无用户干预直接登录成功**; 最终通过的那套用 `set_login_ticket` 定为定稿凭据,
    不要留多种版本。
+
+### 登录凭据过滤与最小化(保存前必须做)
+
+`set_login_ticket` 只负责原样存取, **不做任何过滤**; 存什么、存多少完全由生成代码决定。
+**默认禁止把 cookie / localStorage / sessionStorage 的整套快照原样保存**——它们不保证全有效,
+常混有临时凭据与无效内容, 注入后会导致下次登录失败甚至被风控识别为异常。保存前必须按下述
+规则过滤, 只保留真正让后端放行的鉴权凭据。
+
+**过滤规则**:
+
+1. **Cookie**:
+   - 剔除**已过期**(`expires` 时间点在现在之前)的 cookie、**值为空**或值为
+     `deleted`/`-`/`undefined` 等占位符的 cookie;
+   - 剔除**统计/埋点类** cookie(名称常含 `_ga` `_gid` `_hmt` `hm_` `__utm*` `_clck`
+     `tongji` `statistic` `analytics` 等)与**第三方域** cookie(domain 不属于目标站,
+     如微信/QQ/Google 等第三方登录留下的), 它们与本站鉴权无关;
+   - 剔除**一次性/防跨站 token 类** cookie(名称含 `csrf` `xsrf` `RequestVerificationToken`
+     `nonce` 等), 除非已确认它是登录校验所必需(用第 2 步拦截到的带权限请求头确认);
+   - 保留真正出现在**带权限请求**里的 cookie(与第 2 步拦截到的实际请求头对比),
+     通常是会话标识(session/sid/ssx)与鉴权 token cookie。
+2. **localStorage / sessionStorage**:
+   - 只保留**鉴权相关**的键: 名称含 `token` `jwt` `auth` `session` `refresh`
+     `credentials` 等(可参考 `capture_login_state()` 返回的 `credentials` 分类);
+   - 剔除纯缓存、UI 状态、一次性 nonce、过期时间戳、或与当前登录无关的键;
+   - `sessionStorage` 默认**整段剔除**(按标签页隔离, 一般不用于跨会话复用),
+     仅当确实从带权限请求头里发现 token 来自 sessionStorage 时才保留对应键。
+3. **最小化定稿**: 只保存过滤后的一套**最小凭据集**, 不保留多版本、不整包快照。
+
+**保存后必须做注入验证**: 过滤后的凭据用 `browser_run_code(code, restart=True)` 在**全新
+浏览器**注入(先 `page.goto("目标站URL")` 使归属正确域 → 注入 → `page.reload()`)→ 校验
+无用户干预即登录成功, 通过才定为定稿凭据; 失败则回到第 1/2 步收紧或放宽过滤(往往是漏了
+某关键 token, 或还留着失效/无关 cookie), 反复迭代直到新浏览器直接登录成功。
+
+过滤示例(按目标站实际调整):
+
+```python
+# 登录成功后提取并过滤(示例; token 在 localStorage 时保留对应键)
+HOST = "目标站host"
+import re
+_JUNK = re.compile(r"_ga|_gid|_hmt|hm_|__utm|_clck|tongji|statistic|analytics", re.I)
+state = await capture_login_state()                # cookies + localStorage + sessionStorage + credentials 分类
+core_cookies = [
+    c for c in state["cookies"]
+    if c.get("value")
+    and not _JUNK.search(c.get("name", ""))        # 剔除统计埋点类
+    and (HOST in c.get("domain", ""))              # 只留目标站域内 cookie(第三方域剔除)
+]
+ls = {
+    k: v for k, v in state.get("localStorage", {}).items()
+    if any(x in k.lower() for x in ("token", "jwt", "auth", "session", "refresh"))
+}
+await set_login_ticket(ticket={"cookies": core_cookies, "localStorage": ls}, host=HOST)
+```
 
 ## 调试循环(小步验证, 避免整脚本反复重跑)
 

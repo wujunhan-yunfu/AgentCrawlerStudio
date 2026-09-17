@@ -84,7 +84,10 @@ async def set_login_ticket(ticket, host: str):
     \"\"\"将 ticket 值直接储存在指定的 host 下(不存在则新建); 返回写入的 ticket。
 
     仅接收 ticket 和 host 参数, 内部不对凭据做任何处理(不提取/不注入/不编码),
-    直接把 ticket 值原样储存; 凭据的注入与使用由业务代码自行实现\"\"\"
+    直接把 ticket 值原样储存; 凭据的注入与使用由业务代码自行实现。
+    注意: 本函数不做任何过滤, 保存前应自行裁剪临时/失效/无关凭据
+    (统计埋点类 cookie、一次性 nonce、空值、无关 storage 键等),
+    整套快照原样保存会导致下次注入登录失败甚至被风控识别\"\"\"
     ...
 
 
@@ -110,7 +113,9 @@ async def capture_login_state() -> dict:
     cookies(含 HttpOnly, 多路径兜底采集)/ localStorage / sessionStorage;
     并返回 credentials 字段: 对 cookie 与 storage 中疑似鉴权凭据
     (token/jwt/session/authorization 等)的分类, 供判断真实鉴权凭据来源
-    (cookie 或 localStorage/sessionStorage, JWT 站点常在后者)\"\"\"
+    (cookie 或 localStorage/sessionStorage, JWT 站点常在后者)。
+    返回的是完整快照, 不一定全部有效; 用作 set_login_ticket 保存前必须先
+    裁剪过滤(剔除统计埋点类 cookie、一次性 nonce、空值/过期项、无关 storage 键)\"\"\"
     ...
 
 
