@@ -22,6 +22,7 @@ class FakeBridge:
         self.evaluate_result = {"ok": True, "item": {"v": "42"}}
         self.analyze_result = {"ok": True, "analysis": {"url": "http://a"}}
         self.run_result = {"ok": True, "output": "out", "error": "", "saved": []}
+        self.screenshot_result = b"\x89PNG\r\n\x1a\nfake"
         self.calls = []
 
     async def navigate(self, url, new_page=False):
@@ -37,6 +38,10 @@ class FakeBridge:
 
     async def analyze_page(self):
         return self.analyze_result
+
+    async def screenshot(self):
+        self.calls.append(("screenshot",))
+        return self.screenshot_result
 
     async def run_code(self, code, login_gate=None, restart=True):
         self.calls.append(("run_code", code, restart))
@@ -107,6 +112,63 @@ def test_page_analyze(session):
     bridge.analyze_result = {"ok": False, "error": "fail"}
     out2 = asyncio_run(tools["page_analyze"].ainvoke({}))
     assert "页面分析失败" in out2
+
+
+def test_browser_screenshot(session):
+    import base64
+    import io
+
+    from PIL import Image
+
+    from backend.services.agent.tools.browser import build_browser_tools
+
+    buf = io.BytesIO()
+    Image.new("RGB", (2000, 1000), (10, 20, 30)).save(buf, "PNG")
+    bridge = FakeBridge()
+    bridge.screenshot_result = buf.getvalue()
+    tools = {t.name: t for t in build_browser_tools(session, bridge)}
+    out = asyncio_run(tools["browser_screenshot"].ainvoke({}))
+    assert isinstance(out, list)
+    assert out[0]["type"] == "text"
+    assert out[1]["type"] == "image_url"
+    assert out[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    raw = out[1]["image_url"]["url"].split(",", 1)[1]
+    decoded = base64.b64decode(raw)
+    with Image.open(io.BytesIO(decoded)) as im:
+        assert im.width == 1280
+    assert bridge.calls[-1] == ("screenshot",)
+
+
+def test_browser_screenshot_fallback_png(session):
+    from backend.services.agent.tools.browser import build_browser_tools
+
+    bridge = FakeBridge()
+    bridge.screenshot_result = b"not-an-image"
+    tools = {t.name: t for t in build_browser_tools(session, bridge)}
+    out = asyncio_run(tools["browser_screenshot"].ainvoke({}))
+    assert out[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_browser_screenshot_empty(session):
+    from backend.services.agent.tools.browser import build_browser_tools
+
+    bridge = FakeBridge()
+    bridge.screenshot_result = b""
+    tools = {t.name: t for t in build_browser_tools(session, bridge)}
+    out = asyncio_run(tools["browser_screenshot"].ainvoke({}))
+    assert "截图失败" in out
+
+
+def test_browser_screenshot_error(session):
+    from backend.services.agent.tools.browser import build_browser_tools
+
+    class Boom:
+        async def screenshot(self):
+            raise RuntimeError("shot boom")
+
+    tools = {t.name: t for t in build_browser_tools(session, Boom())}
+    out = asyncio_run(tools["browser_screenshot"].ainvoke({}))
+    assert "截图失败" in out
 
 
 def test_browser_run_code(session):

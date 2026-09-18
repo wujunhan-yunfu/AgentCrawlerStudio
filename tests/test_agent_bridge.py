@@ -44,6 +44,11 @@ async def test_bridge_evaluate(bridge):
     assert result["ok"] is True
 
 
+async def test_bridge_screenshot(bridge):
+    data = await bridge.screenshot()
+    assert data == b"\x89PNG\r\n\x1a\nfake"
+
+
 async def test_bridge_element_shot(bridge):
     data = await bridge.element_shot("img")
     assert data == b"fake-element-png"

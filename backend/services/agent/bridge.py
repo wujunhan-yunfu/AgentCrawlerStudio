@@ -98,6 +98,10 @@ class BrowserBridge:
     async def evaluate(self, expression: str, timeout: float = 10.0) -> dict:
         return await self.stream.cdp.evaluate(expression, timeout=timeout)
 
+    async def screenshot(self) -> bytes:
+        """返回当前活动页面的原始截图字节(PNG, 供 Agent 视觉判断)。"""
+        return await self.stream.screenshot()
+
     async def element_shot(self, selector: str) -> bytes:
         """返回指定元素的原始截图字节(供登录图形验证码刷新)。"""
         return await self.stream.screenshot_element(selector)

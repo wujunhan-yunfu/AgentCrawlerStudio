@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 
 from langchain_core.tools import tool
@@ -16,6 +18,29 @@ from ..bridge import BrowserBridge
 from ..login import LoginGate
 
 _MAX_BODY = 6000
+_MAX_SHOT_WIDTH = 1280
+_SHOT_JPEG_QUALITY = 72
+
+
+def _encode_shot(data: bytes) -> tuple[str, str]:
+    """把原始截图压缩成适合模型查看的 (base64, mime)。
+
+    PNG 截图体积大, 优先缩放并转 JPEG 以降低 token/带宽; Pillow 处理失败时
+    回退为原始 PNG, 保证截图仍能交给模型。
+    """
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as im:
+            im = im.convert("RGB")
+            if im.width > _MAX_SHOT_WIDTH:
+                ratio = _MAX_SHOT_WIDTH / im.width
+                im = im.resize((_MAX_SHOT_WIDTH, max(1, int(im.height * ratio))))
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=_SHOT_JPEG_QUALITY)
+        return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
+    except Exception:  # noqa: BLE001
+        return base64.b64encode(data).decode(), "image/png"
 
 
 def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
@@ -94,6 +119,35 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         if not result.get("ok"):
             return f"页面分析失败: {result.get('error')}"
         return json.dumps(result.get("analysis"), ensure_ascii=False, indent=2)
+
+    @tool
+    async def browser_screenshot() -> list:
+        """截取当前浏览器活动页面的画面, 作为图片直接交给模型查看(多模态)。
+
+        当仅凭 DOM/文本无法确定前端真实情况时使用: 页面布局错位、元素被遮挡或不可见、
+        弹窗/验证/登录框的具体样式、渲染结果与预期不符、不确定该点击画面哪个位置等。
+        这是"用眼睛看"的手段, 不要用它替代 page_analyze / browser_evaluate:
+        能用 DOM/文本确定的信息优先用那些工具, 只在确实需要看画面时截图。
+        返回的截图会压缩后随工具结果一起给你, 你可在下一轮直接看到画面内容。
+        Args:
+            无参数, 直接截取当前浏览器活动页面。
+        Returns:
+            图片内容块列表(含页面说明), 截取失败时返回错误说明字符串。
+        """
+        try:
+            data = await bridge.screenshot()
+        except Exception as exc:  # noqa: BLE001
+            return f"截图失败: {exc}"
+        if not data:
+            return "截图失败: 未获取到画面(浏览器可能尚未打开页面)"
+        b64, mime = _encode_shot(data)
+        return [
+            {
+                "type": "text",
+                "text": f"当前活动页面截图({mime}, 原始 {len(data)} 字节), 请结合画面判断:",
+            },
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+        ]
 
     @tool
     async def browser_run_code(code: str, restart: bool = True) -> str:
@@ -175,5 +229,6 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         browser_pages,
         browser_evaluate,
         page_analyze,
+        browser_screenshot,
         browser_run_code,
     ]
