@@ -636,6 +636,23 @@ body {
   color: #858585;
 }
 
+.saved-download {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  background: #3c3c3c;
+  color: #cccccc;
+  border: 1px solid #4a4a4a;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.saved-row .saved-download:hover {
+  background: #007acc;
+  border-color: #007acc;
+  color: #ffffff;
+}
+
 .saved-detail {
   margin-top: 2px;
   border: 1px solid #3c3c3c;

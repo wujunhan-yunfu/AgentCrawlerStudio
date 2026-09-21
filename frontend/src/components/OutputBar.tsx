@@ -86,6 +86,28 @@ export default function OutputBar({
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   };
 
+  const downloadSaved = (item: SavedItem) => {
+    let blob: Blob;
+    if (item.kind === "img") {
+      const m = /^data:([^;,]+)(?:;[^,]*)?,([\s\S]*)$/.exec(item.content);
+      const mime = m ? m[1] : "image/png";
+      const bin = atob((m ? m[2] : item.content).trim());
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+      blob = new Blob([bytes], { type: mime });
+    } else {
+      blob = new Blob([item.content], { type: "text/plain;charset=utf-8" });
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = item.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const formatTs = (ms: number): string => {
     const d = new Date(ms);
     const p = (n: number, len = 2) => String(n).padStart(len, "0");
@@ -298,16 +320,34 @@ export default function OutputBar({
                 const open = expandedSaved.has(item.id);
                 return (
                   <div key={item.id} className="saved-item">
-                    <button
+                    <div
                       className="saved-row"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => toggleSaved(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          toggleSaved(item.id);
+                        }
+                      }}
                       title="点击查看详情"
                     >
                       <span className={`saved-kind ${item.kind}`}>{item.kind === "page" ? "页面" : item.kind === "img" ? "图片" : "内容"}</span>
                       <span className="saved-name">{item.name}</span>
                       <span className="saved-size">{formatSize(item.size)}</span>
+                      <button
+                        className="saved-download"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadSaved(item);
+                        }}
+                        title="下载该文件"
+                      >
+                        下载
+                      </button>
                       <span className="saved-caret">{open ? "▾" : "▸"}</span>
-                    </button>
+                    </div>
                     {open ? (
                       <div className="saved-detail">
                         <div className="saved-meta">路径: {item.path}</div>
