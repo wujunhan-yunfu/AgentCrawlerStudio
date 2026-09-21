@@ -34,6 +34,22 @@ def test_config_defaults():
     assert c.dev_limit is True
     assert c.max_items == 50
     assert c.max_bytes == 512 * 1024
+    # 运行模式(CDC 编排)
+    assert c.mode == "dev"
+    assert c.run_type == "once"
+    assert c.cron == ""
+    assert c.run_id == ""
+    assert c.webhook_url == ""
+    assert c.webhook_secret == ""
+    assert c.heartbeat_url == ""
+    assert c.heartbeat_interval == 30
+    assert c.data_webhook_url == ""
+    assert c.data_inline_max_bytes == 1024 * 1024
+    assert c.data_webhook_sync is False
+    assert c.login_timeout == 300.0
+    assert c.source == "editor"
+    assert c.headless is None
+    assert c.serve is False
 
 
 def test_static_dir():
@@ -163,6 +179,66 @@ def test_build_config_env(monkeypatch):
     assert c.dev_limit is False
     assert c.max_items == 5
     assert c.max_bytes == 1024
+
+
+def test_build_config_runmode_env(monkeypatch):
+    from backend.config import build_config
+
+    monkeypatch.setenv("MODE", "run")
+    monkeypatch.setenv("RUN_TYPE", "cron")
+    monkeypatch.setenv("CRON", "*/5 * * * *")
+    monkeypatch.setenv("RUN_ID", "run_abc")
+    monkeypatch.setenv("WEBHOOK_URL", "https://cdc/api/v1/webhooks/runs")
+    monkeypatch.setenv("WEBHOOK_SECRET", "secret")
+    monkeypatch.setenv("HEARTBEAT_INTERVAL", "15")
+    monkeypatch.setenv("DATA_WEBHOOK_URL", "https://cdc/api/v1/webhooks/data")
+    monkeypatch.setenv("DATA_WEBHOOK_SYNC", "1")
+    monkeypatch.setenv("LOGIN_TIMEOUT", "120")
+    monkeypatch.setenv("SOURCE", "mongo")
+    monkeypatch.setenv("HEADLESS", "1")
+    monkeypatch.setenv("SERVE", "1")
+    monkeypatch.setattr("sys.argv", ["prog"])
+
+    c = build_config()
+    assert c.mode == "run"
+    assert c.run_type == "cron"
+    assert c.cron == "*/5 * * * *"
+    assert c.run_id == "run_abc"
+    assert c.webhook_url == "https://cdc/api/v1/webhooks/runs"
+    assert c.webhook_secret == "secret"
+    assert c.heartbeat_interval == 15
+    assert c.data_webhook_url == "https://cdc/api/v1/webhooks/data"
+    assert c.data_webhook_sync is True
+    assert c.login_timeout == 120.0
+    assert c.source == "mongo"
+    assert c.headless is True
+    assert c.serve is True
+
+
+def test_build_config_runmode_cli(monkeypatch):
+    from backend.config import build_config
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "prog",
+            "--mode", "login",
+            "--run-type", "cron",
+            "--cron", "0 8 * * *",
+            "--webhook-url", "https://x/runs",
+            "--login-timeout", "90",
+            "--no-headless",
+            "--no-serve",
+        ],
+    )
+    c = build_config()
+    assert c.mode == "login"
+    assert c.run_type == "cron"
+    assert c.cron == "0 8 * * *"
+    assert c.webhook_url == "https://x/runs"
+    assert c.login_timeout == 90.0
+    assert c.headless is False
+    assert c.serve is False
 
 
 def test_build_config_cli_args(monkeypatch):

@@ -46,6 +46,23 @@ class Config:
     verify_rule_fallback: bool = True      # 无视觉模型时允许规则强命中兜底
     verify_runtime_exit: bool = True       # 产物运行期超限即结束本次运行
 
+    # ---- 运行模式(CDC 编排用) ----
+    mode: str = "dev"                      # dev / login / run
+    run_type: str = "once"                 # run 模式: once / cron
+    cron: str = ""                         # run 模式 cron 表达式
+    run_id: str = ""                       # 本次运行 ID(CDC 生成, 回传 webhook)
+    webhook_url: str = ""                  # 运行事件 webhook 回调地址
+    webhook_secret: str = ""               # webhook HMAC 签名密钥
+    heartbeat_url: str = ""                # 定时任务心跳地址(缺省由 webhook_url 推导)
+    heartbeat_interval: int = 30           # 心跳间隔(秒), 仅 run+cron 生效
+    data_webhook_url: str = ""             # 爬取数据 webhook 地址(缺省由 webhook_url 推导)
+    data_inline_max_bytes: int = 1024 * 1024  # 数据内联阈值(超过走预签名直传, 预留)
+    data_webhook_sync: bool = False        # save_content 是否同步等待 CDC 确认
+    login_timeout: float = 300.0           # login 模式总超时(秒)
+    source: str = "editor"                 # 代码来源: editor / mongo(login/run 固定 mongo)
+    headless: bool | None = None           # 无头模式(None 按模式默认: run 无头)
+    serve: bool = False                    # login 模式暴露实时画面服务(CDC 场景固定开启)
+
 
 def find_chrome() -> str:
     for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
@@ -143,6 +160,47 @@ def build_config() -> Config:
                         action="store_false",
                         default=os.environ.get("VERIFY_RUNTIME_EXIT", "1") != "0",
                         help="产物运行期超限不结束本次运行(调试用, 仍不弹窗)")
+    # ---- 运行模式(CDC 编排用) ----
+    parser.add_argument("--mode", default=os.environ.get("MODE", "dev"),
+                        help="运行模式: dev(默认) / login / run")
+    parser.add_argument("--run-type", default=os.environ.get("RUN_TYPE", "once"),
+                        help="run 模式: once 一次性 / cron 定时")
+    parser.add_argument("--cron", default=os.environ.get("CRON", ""),
+                        help="run 模式 cron 表达式")
+    parser.add_argument("--run-id", default=os.environ.get("RUN_ID", ""),
+                        help="本次运行 ID(CDC 生成, 回传 webhook)")
+    parser.add_argument("--webhook-url", default=os.environ.get("WEBHOOK_URL", ""),
+                        help="运行事件 webhook 回调地址")
+    parser.add_argument("--webhook-secret", default=os.environ.get("WEBHOOK_SECRET", ""),
+                        help="webhook HMAC 签名密钥")
+    parser.add_argument("--heartbeat-url", default=os.environ.get("HEARTBEAT_URL", ""),
+                        help="定时任务心跳地址(缺省由 webhook-url 推导)")
+    parser.add_argument("--heartbeat-interval", type=int,
+                        default=int(os.environ.get("HEARTBEAT_INTERVAL", "30")),
+                        help="心跳间隔(秒), 仅 run+cron 生效")
+    parser.add_argument("--data-webhook-url", default=os.environ.get("DATA_WEBHOOK_URL", ""),
+                        help="爬取数据 webhook 地址(缺省由 webhook-url 推导)")
+    parser.add_argument("--data-inline-max-bytes", type=int,
+                        default=int(os.environ.get("DATA_INLINE_MAX_BYTES", str(1024 * 1024))),
+                        help="数据内联阈值(字节), 超过走预签名直传(预留)")
+    parser.add_argument("--data-webhook-sync", dest="data_webhook_sync",
+                        action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("DATA_WEBHOOK_SYNC", "0") != "0",
+                        help="save_content 是否同步等待 CDC 确认(默认异步)")
+    parser.add_argument("--login-timeout", type=float,
+                        default=float(os.environ.get("LOGIN_TIMEOUT", "300")),
+                        help="login 模式总超时(秒)")
+    parser.add_argument("--source", default=os.environ.get("SOURCE", "editor"),
+                        help="代码来源: editor / mongo(login/run 固定 mongo)")
+    parser.add_argument("--headless", dest="headless",
+                        action=argparse.BooleanOptionalAction,
+                        default=None if "HEADLESS" not in os.environ
+                        else os.environ.get("HEADLESS", "") != "0",
+                        help="无头模式运行(默认按模式: run 无头)")
+    parser.add_argument("--serve", dest="serve",
+                        action=argparse.BooleanOptionalAction,
+                        default=os.environ.get("SERVE", "0") != "0",
+                        help="login 模式暴露实时画面服务(CDC 场景固定开启)")
     args = parser.parse_args()
     api_prefix = _norm_prefix(args.api_prefix, default="")
     web_prefix = _norm_prefix(args.web_prefix, default="/")
@@ -177,4 +235,19 @@ def build_config() -> Config:
         verify_vision_base_url=args.verify_vision_base_url,
         verify_rule_fallback=args.verify_rule_fallback,
         verify_runtime_exit=args.verify_runtime_exit,
+        mode=args.mode,
+        run_type=args.run_type,
+        cron=args.cron,
+        run_id=args.run_id,
+        webhook_url=args.webhook_url,
+        webhook_secret=args.webhook_secret,
+        heartbeat_url=args.heartbeat_url,
+        heartbeat_interval=args.heartbeat_interval,
+        data_webhook_url=args.data_webhook_url,
+        data_inline_max_bytes=args.data_inline_max_bytes,
+        data_webhook_sync=args.data_webhook_sync,
+        login_timeout=args.login_timeout,
+        source=args.source,
+        headless=args.headless,
+        serve=args.serve,
     )

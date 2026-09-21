@@ -427,7 +427,8 @@ class BrowserStream:
 
     async def run_code(self, code: str, login_gate: Any = None,
                        restart: bool = True,
-                       on_output: Callable[[str], Any] | None = None) -> dict:
+                       on_output: Callable[[str], Any] | None = None,
+                       on_credential_saved: Callable[[Any, str], Any] | None = None) -> dict:
         """执行用户编写的 Playwright 代码(async 风格)。
 
         restart=True(默认)时执行前先重启 Chrome 得到全新无痕浏览器(保留 Xvfb 与抓屏);
@@ -438,11 +439,13 @@ class BrowserStream:
         page_login, print 输出会被捕获, 保存的内容(save_page/save_content)随结果返回。
         脚本为 async 风格: 使用 page/context/browser 及内置函数时需 await
         (如 `await page.goto(url)`、`await save_page()`), 顶层 await 受支持。
-login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交互;
-         非 Agent 调用(前端直接运行)时不传, page_login 会抛明确错误。
+        login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交互;
+          非 Agent 调用(前端直接运行)时不传, page_login 会抛明确错误。
          on_output: 可选回调, stdout/stderr 每次写入都会同步调用它(用于流式
-         实时输出), 回调为同步函数, 需自行把数据交给事件循环。
-         代码运行在受限环境: 除 save_content / save_page 外的一切文件读写
+          实时输出), 回调为同步函数, 需自行把数据交给事件循环。
+         on_credential_saved: 可选回调, set_login_ticket 保存成功后被调用
+          (login 模式编排层用它感知凭据保存完成, 见 runmode.login_mode)。
+          代码运行在受限环境: 除 save_content / save_page 外的一切文件读写
         (open / os / pathlib / shutil / subprocess / io 等)均被禁用。
         开发测试模式(默认开启)下 save_page/save_content 自动限制数据量,
         limit_items(data, n) 可用于限制遍历长度; 上线时加 --no-dev-limit 取消。
@@ -455,6 +458,7 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
         from .sandbox import safe_builtins
         from .agent.login import LoginCancelled
         from .agent.verify.exceptions import VerificationFailed
+        from .runmode.run_context import LoginComplete
 
         class _OutputTee:
             """捕获 stdout/stderr 的同时实时转发给回调, 兼容 redirect_stdout 接口。"""
@@ -505,6 +509,13 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
                 self.cfg, page, context=context, login_gate=login_gate
             )
             await env_obj.reset_saved()
+
+            async def _set_login_ticket(ticket: Any, host: str) -> Any:
+                result = await env_obj.set_login_ticket(ticket, host)
+                if on_credential_saved is not None:
+                    await on_credential_saved(ticket, host)
+                return result
+
             env = {
                 "page": page,
                 "context": context,
@@ -513,7 +524,7 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
                 "save_content": env_obj.save_content,
                 "limit_items": env_obj.limit_items,
                 "get_login_ticket": env_obj.get_login_ticket,
-                "set_login_ticket": env_obj.set_login_ticket,
+                "set_login_ticket": _set_login_ticket,
                 "page_login": env_obj.page_login,
                 "verify_check": getattr(env_obj, "verify_check", None),
                 "VerificationFailed": VerificationFailed,
@@ -529,6 +540,16 @@ login_gate: 爬虫 Agent 会话注入的登录桥, 供 page_login 与用户交�
             # 用户取消登录: 脚本立即终止, 返回明确结果而非异常堆栈
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": "用户取消登录", "saved": saved}
+        except LoginComplete as exc:
+            # login 模式: 凭据保存成功, 编排层结束运行(非错误)
+            saved = env_obj.saved_items() if env_obj is not None else []
+            return {
+                "ok": True,
+                "output": out.getvalue(),
+                "error": "",
+                "saved": saved,
+                "login_complete": True,
+            }
         except VerificationFailed as exc:
             # 产物运行期人机验证限次未通过: 本次运行直接结束(不弹窗)
             saved = env_obj.saved_items() if env_obj is not None else []
