@@ -42,6 +42,7 @@ uv run pytest --cov=backend --cov-report=term   # coverage report
 
 ## Key Quirks
 
+- **Run modes** (`--mode dev|login|run`, env `MODE`): `dev` is the default full IDE; `login` mounts only console/stream/status, auto-runs Mongo HEAD code to the "login + credential saved" point (`LoginRunManager` + reused `RunLoginManager`/`page_login`; `set_login_ticket` triggers `LoginComplete`); `run` is a CLI executor (no web server) doing once/cron runs with webhook callbacks + heartbeat + per-`save_content` data push. Run-mode logic lives in `backend/services/runmode/` (webhook.py / code_source.py / data_webhook.py / heartbeat.py / runtime.py / login_mode.py / run_mode.py). `run_code` accepts `on_credential_saved` and handles `LoginComplete`. `GET /healthz` (all web modes) for probes. See `docs/crawler-data-center-plan.md`.
 - Chrome runs **headed** with `--no-sandbox` (safe for root/CI); starts on Chrome's default blank page (no URL argument)
 - `Xvfb` display defaults to `:99`; backend auto-reuses existing Xvfb if `:99` is already held
 - Each `/run` request spins up a **fresh browser** with a new temp `user-data-dir` (non-incognito — incognito breaks the CDP Cookie API); Xvfb + capture are kept
