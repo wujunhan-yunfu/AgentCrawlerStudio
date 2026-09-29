@@ -16,6 +16,7 @@ import { useProblems } from "./hooks/useProblems";
 import { useStatus } from "./hooks/useStatus";
 import { useVersions } from "./hooks/useVersions";
 import { runCodeStream, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, type RunOutputLine, type SavedItem, type RunLoginRequestData } from "./utils/api";
+import { createTermState, flushTerm, pushTerm, termView, type TermState } from "./utils/ansiTerm";
 
 const OUTPUT_DEFAULT_HEIGHT = 300;
 const ACTIVITY_BAR_WIDTH = 48;
@@ -54,7 +55,7 @@ export default function App() {
   const lastSyncedRef = useRef("");
   const codeRef = useRef(DEFAULT_CODE);
   const runAbortRef = useRef<AbortController | null>(null);
-  const pendingOutputRef = useRef("");
+  const termRef = useRef<TermState>(createTermState());
   const [model, setModel] = useState<monaco.editor.ITextModel | null>(null);
   const problems = useProblems(model);
   const { imgRef, connected, lagMs, fps, width, height, conflict, kicked, stopped, resolveConflict } = useLiveStream();
@@ -124,17 +125,35 @@ export default function App() {
     editor.focus();
   };
 
-  // 流式输出: 把 stdout chunk 按行拆分, 每行附带产生该行的时间戳(类命令行日志);
-  // 未以换行结尾的半个行作为 pending 实时渲染(带闪烁光标), 换行后落入已提交行列表
+  // 依据归一器视图同步 output/pending: 新增行提交, 被多进度条改写/移位的行按文本比对替换(保留原时间戳)
+  const syncTerm = (ts: number) => {
+    const { committed, live } = termView(termRef.current);
+    setOutput((prev) => {
+      let out = prev;
+      if (committed.length > out.length) {
+        out = [...out, ...committed.slice(out.length).map((t) => ({ ts, text: t }))];
+      } else if (committed.length < out.length) {
+        out = out.slice(0, committed.length);
+      }
+      let changed = false;
+      for (let i = 0; i < committed.length; i++) {
+        if (out[i].text !== committed[i]) {
+          if (!changed) {
+            out = out.slice();
+            changed = true;
+          }
+          out[i] = { ...out[i], text: committed[i] };
+        }
+      }
+      return out;
+    });
+    setPending(live !== null ? { ts, text: live } : null);
+  };
+
+  // 流式输出: 原始 chunk 喂入终端语义归一器, \n 提交完整行, \r 原位覆盖活动行(进度条原位刷新)
   const appendOutput = (data: string, ts: number) => {
-    const text = pendingOutputRef.current + data;
-    const parts = text.split("\n");
-    const complete = parts.slice(0, -1);
-    pendingOutputRef.current = parts[parts.length - 1];
-    if (complete.length) {
-      setOutput((prev) => [...prev, ...complete.map((t) => ({ ts, text: t }))]);
-    }
-    setPending(pendingOutputRef.current ? { ts, text: pendingOutputRef.current } : null);
+    termRef.current = pushTerm(termRef.current, data);
+    syncTerm(ts);
   };
 
   const handleStop = () => {
@@ -147,7 +166,7 @@ export default function App() {
     runAbortRef.current = abort;
     setRunning(true);
     setOutput([]);
-    pendingOutputRef.current = "";
+    termRef.current = createTermState();
     setPending(null);
     setError("");
     setSaved([]);
@@ -156,13 +175,10 @@ export default function App() {
     const id = `run_${Date.now().toString(36)}`;
     setRunId(id);
 
-    // 冲刷未换行的半个输出行, 保证标记与输出顺序正确
+    // 冲刷归一器残留的活动行(运行结束/停止), 保证与标记顺序正确
     const flushPending = (ts: number) => {
-      if (pendingOutputRef.current) {
-        setOutput((prev) => [...prev, { ts, text: pendingOutputRef.current }]);
-        pendingOutputRef.current = "";
-        setPending(null);
-      }
+      termRef.current = flushTerm(termRef.current);
+      syncTerm(ts);
     };
     // 样式化执行开始/结束标记(非文本)
     const addMarker = (m: { marker: "start" | "end"; ts: number; ok?: boolean; dur?: number }) => {

@@ -25,6 +25,7 @@ import {
   agentStop,
   agentWsUrl,
 } from "../utils/api";
+import { normalizeTerm } from "../utils/ansiTerm";
 
 interface AgentEvent {
   type: string;
@@ -231,7 +232,7 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
       if (HIDDEN_TOOL_NAMES.has(name)) continue;
       const err = (meta.error as string) ?? "";
       const found = findTool(id, name);
-      const patch = { state: err ? "error" : "done", content: m.content, error: err } as const;
+      const patch = { state: err ? "error" : "done", content: normalizeTerm(m.content), error: err } as const;
       if (found) {
         feed[found.index] = { ...found.item, ...patch };
       } else {
@@ -697,7 +698,7 @@ export function useAgent(): AgentState {
       case "tool_result": {
         if (!sid) break;
         if (msg.name && HIDDEN_TOOL_NAMES.has(msg.name)) break;
-        applyToolResult(sid, msg.id, msg.name, msg.content ?? "", msg.error ?? "");
+        applyToolResult(sid, msg.id, msg.name, normalizeTerm(msg.content ?? ""), msg.error ?? "");
         break;
       }
       case "status": {
