@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { MergeSegment } from "../utils/merge";
 import type { ResolutionPick } from "../hooks/useVersions";
+import { useI18n } from "../i18n";
 
 interface Props {
   segments: MergeSegment[];
@@ -12,6 +13,7 @@ interface Props {
  * 渲染复用 oc-diff 类(暂存=删除色, 最新=新增色), 便于直观对比。
  */
 export default function ConflictResolve({ segments, onApply }: Props) {
+  const { t } = useI18n();
   const conflicts = segments.filter((s) => s.type === "conflict");
   const [picks, setPicks] = useState<ResolutionPick[]>(() =>
     conflicts.map(() => "mine"),
@@ -27,39 +29,39 @@ export default function ConflictResolve({ segments, onApply }: Props) {
   return (
     <div className="vc-conflict">
       <div className="vc-conflict-title">
-        暂存草稿与最新代码存在 {conflicts.length} 处冲突, 请逐处选择保留内容
+        {t("conflict.title", { count: conflicts.length })}
       </div>
       <div className="vc-conflict-actions">
-        <button onClick={() => all("mine")}>全部保留暂存</button>
-        <button onClick={() => all("theirs")}>全部保留最新</button>
-        <button onClick={() => all("both")}>全部保留两者</button>
+        <button onClick={() => all("mine")}>{t("conflict.allMine")}</button>
+        <button onClick={() => all("theirs")}>{t("conflict.allTheirs")}</button>
+        <button onClick={() => all("both")}>{t("conflict.allBoth")}</button>
       </div>
       {conflicts.map((s, i) => (
         <div key={i} className="vc-conflict-block">
           <div className="vc-conflict-picker">
-            <span className="vc-conflict-label">冲突 #{i + 1}:</span>
+            <span className="vc-conflict-label">{t("conflict.item", { index: i + 1 })}</span>
             <button
               className={picks[i] === "mine" ? "active" : ""}
               onClick={() => setPick(i, "mine")}
             >
-              保留暂存
+              {t("conflict.keepMine")}
             </button>
             <button
               className={picks[i] === "theirs" ? "active" : ""}
               onClick={() => setPick(i, "theirs")}
             >
-              保留最新
+              {t("conflict.keepTheirs")}
             </button>
             <button
               className={picks[i] === "both" ? "active" : ""}
               onClick={() => setPick(i, "both")}
             >
-              保留两者
+              {t("conflict.keepBoth")}
             </button>
           </div>
           <div className="oc-diff">
             <div className="oc-diff-hunk">
-              <div className="oc-diff-hunk-head">暂存(本地) vs 最新(远端)</div>
+              <div className="oc-diff-hunk-head">{t("conflict.compareHead")}</div>
               <div className="oc-diff-hunk-body">
                 {(s.mine ?? []).map((l, li) => (
                   <div key={`m${li}`} className="oc-diff-line del">
@@ -90,7 +92,7 @@ export default function ConflictResolve({ segments, onApply }: Props) {
       ))}
       <div className="vc-conflict-confirm">
         <button className="primary" onClick={() => onApply(picks)}>
-          应用选择并写回编辑器
+          {t("conflict.apply")}
         </button>
       </div>
     </div>

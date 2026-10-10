@@ -3,6 +3,7 @@ import { codeCommitDetail } from "../utils/api";
 import type { CodeCommitSummary } from "../utils/api";
 import { diffHunks, diffStatsFromHunks, type DiffHunk } from "../utils/diff";
 import type { VersionsState } from "../hooks/useVersions";
+import { useI18n } from "../i18n";
 import ConflictResolve from "./ConflictResolve";
 
 const shortHash = (h: string) => (h ? h.slice(0, 8) : "-");
@@ -13,6 +14,7 @@ const fmtTime = (t: number) => (t ? new Date(t).toLocaleString() : "-");
  * 渲染沿用 VSCode 暗色布局与 oc-diff 类。
  */
 export default function VersionsPanel({ versions }: { versions: VersionsState }) {
+  const { t } = useI18n();
   const {
     loading,
     ready,
@@ -43,7 +45,7 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
   }, [headContent, versions.code]);
 
   if (loading && !ready) {
-    return <div className="vc-status">加载中...</div>;
+    return <div className="vc-status">{t("common.loading")}</div>;
   }
 
   const doCommit = async () => {
@@ -62,9 +64,7 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
   const doCheckout = async (commitId: string) => {
     if (busy) return;
     if (
-      !window.confirm(
-        "检出将用该版本覆盖当前工作区(HEAD 不变), 当前未提交变更会被替换。继续?",
-      )
+      !window.confirm(t("versions.checkoutConfirm"))
     ) {
       return;
     }
@@ -99,14 +99,14 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
 
   return (
     <div className="versions">
-      {error ? <div className="vc-error">错误: {error}</div> : null}
+      {error ? <div className="vc-error">{t("versions.error", { error })}</div> : null}
       {loadErr ? <div className="vc-error">{loadErr}</div> : null}
 
       {mergeState === "merged" && mergeResult ? (
         <div className="vc-merge-banner">
-          <span>已合并暂存草稿与刷新后的最新变更</span>
+          <span>{t("versions.merged")}</span>
           <button className="primary" onClick={versions.acceptMerged}>
-            知道了
+            {t("versions.gotIt")}
           </button>
         </div>
       ) : null}
@@ -117,17 +117,21 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
 
       <section className="vc-section">
         <div className="vc-section-head">
-          <span className="vc-section-title">未提交变更</span>
+          <span className="vc-section-title">{t("versions.uncommitted")}</span>
           {dirty ? (
             <span className="vc-dirty">
-              *{wipStats.add + wipStats.del} 变更(+{wipStats.add} −{wipStats.del})
+              {t("versions.changes", {
+                total: wipStats.add + wipStats.del,
+                add: wipStats.add,
+                del: wipStats.del,
+              })}
             </span>
           ) : (
-            <span className="vc-clean">与最新提交一致</span>
+            <span className="vc-clean">{t("versions.clean")}</span>
           )}
           {dirty ? (
             <button className="vc-link" onClick={() => setOpenDiff((o) => !o)}>
-              {openDiff ? "收起" : "查看差异"}
+              {openDiff ? t("versions.collapse") : t("versions.viewDiff")}
             </button>
           ) : null}
         </div>
@@ -136,13 +140,13 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
 
       <section className="vc-section">
         <div className="vc-section-head">
-          <span className="vc-section-title">提交</span>
+          <span className="vc-section-title">{t("versions.commitSection")}</span>
         </div>
         <div className="vc-commit-row">
           <input
             className="vc-input"
             value={message}
-            placeholder="提交信息"
+            placeholder={t("versions.commitMessage")}
             maxLength={200}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={(e) => {
@@ -154,11 +158,11 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
             disabled={!dirty || !message.trim() || busy}
             onClick={() => void doCommit()}
           >
-            提交
+            {t("versions.commit")}
           </button>
         </div>
         <div className="vc-commit-author">
-          <span>提交人</span>
+          <span>{t("versions.committer")}</span>
           <input
             className="vc-input"
             value={author}
@@ -170,13 +174,13 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
 
       <section className="vc-section">
         <div className="vc-section-head">
-          <span className="vc-section-title">历史</span>
+          <span className="vc-section-title">{t("versions.history")}</span>
           <button className="vc-link" onClick={() => void versions.refresh()}>
-            刷新
+            {t("common.refresh")}
           </button>
         </div>
         {commits.length === 0 ? (
-          <div className="vc-empty">暂无提交</div>
+          <div className="vc-empty">{t("versions.noCommits")}</div>
         ) : (
           <ul className="vc-timeline">
             {commits.map((c) => {
@@ -188,7 +192,7 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
                     <div className="vc-tl-title">
                       <span className="vc-tl-chevron">▸</span>
                       <span className="vc-tl-msg" title={c.message}>
-                        {c.message || "(无提交信息)"}
+                        {c.message || t("versions.noCommitMessage")}
                       </span>
                       <span className="oc-diff-stats">
                         <span className="stat-add">+{c.stat.add}</span>
@@ -210,10 +214,10 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
                             className="vc-link"
                             onClick={() => void doCheckout(c.commit_id)}
                           >
-                            检出
+                            {t("versions.checkout")}
                           </button>
                           <button className="vc-link" onClick={() => void toggleCommit(c)}>
-                            收起差异
+                            {t("versions.collapseDiff")}
                           </button>
                         </div>
                         <DiffBlock from={expanded?.from ?? ""} to={expanded?.to ?? ""} />
@@ -229,7 +233,7 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
 
       <section className="vc-section">
         <div className="vc-section-head">
-          <span className="vc-section-title">仓库状态</span>
+          <span className="vc-section-title">{t("versions.repoStatus")}</span>
         </div>
         <div className="vc-repo">
           <div>
@@ -242,14 +246,14 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
                 {shortHash(head.commit_id)}
               </span>
             ) : (
-              <span className="vc-muted">(空仓库)</span>
+              <span className="vc-muted">{t("versions.emptyRepo")}</span>
             )}
             {head ? <span className="vc-muted"> · {head.message}</span> : null}
           </div>
           {persistWarning ? (
-            <div className="vc-warn">草稿未保存(本地存储容量不足)</div>
+            <div className="vc-warn">{t("versions.draftUnsaved")}</div>
           ) : (
-            <div className="vc-muted">本地草稿已持久化</div>
+            <div className="vc-muted">{t("versions.draftPersisted")}</div>
           )}
         </div>
       </section>
@@ -258,13 +262,14 @@ export default function VersionsPanel({ versions }: { versions: VersionsState })
 }
 
 function DiffBlock({ from, to }: { from: string; to: string }) {
+  const { t } = useI18n();
   const { hunks, stats } = useMemo(() => {
     const h = diffHunks(from, to, 3);
     return { hunks: h, stats: diffStatsFromHunks(h) };
   }, [from, to]);
 
   if (stats.add === 0 && stats.del === 0) {
-    return <div className="vc-muted vc-pad">无差异</div>;
+    return <div className="vc-muted vc-pad">{t("versions.noDiff")}</div>;
   }
 
   return (

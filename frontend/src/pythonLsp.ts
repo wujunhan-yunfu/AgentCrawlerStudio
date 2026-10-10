@@ -2,6 +2,7 @@ import { MonacoLanguageClient, type MonacoLanguageClientOptions } from "monaco-l
 import { CloseAction, ErrorAction } from "vscode-languageclient";
 import { toSocket, WebSocketMessageReader, WebSocketMessageWriter } from "vscode-ws-jsonrpc";
 import { api } from "./utils/api";
+import { t } from "./i18n";
 
 let client: MonacoLanguageClient | null = null;
 let docUri: string | null = null;
@@ -30,7 +31,7 @@ function createTransports(): Promise<MonacoLanguageClientOptions["messageTranspo
   return new Promise((resolve, reject) => {
     webSocket.onerror = (e) => {
       console.error("LSP WebSocket error", e);
-      reject(new Error("LSP WebSocket 连接失败"));
+      reject(new Error(t("editor.lspWsFailed")));
     };
     webSocket.onopen = () => {
       const socket = toSocket(webSocket);

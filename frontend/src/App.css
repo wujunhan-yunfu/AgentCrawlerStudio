@@ -323,6 +323,12 @@ body {
   user-select: none;
 }
 
+.theme-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--vscode-border);
+}
+
 .activitybar button.theme-menu-item::before {
   content: none;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../utils/api";
+import { t } from "../i18n";
 
 export interface ConsoleItem {
   k: "text" | "obj";
@@ -147,7 +148,7 @@ export function useConsole(): {
           group: 0,
         };
       } else {
-        const err = j.error ?? "求值失败";
+        const err = j.error ?? t("console.evalFailed");
         result = {
           type: "console",
           kind: "eval",

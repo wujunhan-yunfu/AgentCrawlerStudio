@@ -5,6 +5,7 @@ import { ensureMonacoServices, PYTHON_THEME, PYTHON_THEME_LIGHT } from "../monac
 import { ensureLspInfo, startPythonLsp } from "../pythonLsp";
 import { organizeImports } from "../utils/api";
 import { useTheme } from "../theme";
+import { useI18n } from "../i18n";
 
 interface Props {
   value: string;
@@ -14,35 +15,13 @@ interface Props {
   onEditorReady?: (editor: monaco.editor.IStandaloneCodeEditor) => void;
 }
 
-const PLACEHOLDER_LINES = [
-  "# 在这里编写你的爬虫脚本",
-  "# 已注入对象: page / context / browser (Playwright 同步 API)",
-  "",
-  "# 内置函数:",
-  "#   save_page()              保存当前页面完整 HTML 到 /saved",
-  "#   save_content(data, fmt)  保存文本(默认)/ JSON / JSONL / CSV / base64 图片到 /saved",
-  "#   get_login_ticket(host) 从 MongoDB 读取指定 host 下储存的 ticket(仅返回, 不处理; None 表示无凭据)",
-  "#   set_login_ticket(ticket, host) 将 ticket 值直接储存在指定 host 下(不处理/不提取)",
-  "#   page_login(method, ...selectors)  交互登录: 二维码扫码 / 账密 / 验证码; method 必填(qr/account/sms), 不支持 auto",
-  "#   verify_check(...)  人机验证常驻监听(不弹窗): 用 async with verify_check() 包住易触发验证的代码段",
-  "#     触发后自动在运行中尝试通过(滑块/我是真人/点选); 限次内未过抛 VerificationFailed 结束本次运行",
-  "#     按页降级示例: try: async with verify_check(): ...页逻辑...; except VerificationFailed: 记录后跳过该页",
-  "#     可传 hints={'expected': [...], 'container': {...}, 'target': ..., 'grid': {...}} 加速判定(可选)",
-  "# 注入凭据直接用 playwright 对象: context.add_cookies(...) / page.evaluate('localStorage.setItem(...)')",
-  "# 需要登录时按必选流程: get_login_ticket(host) 复用凭据 → 取到则访问网站→注入→刷新→校验",
-  "#   取不到/失效(先清空已注入信息)则 page_login 自动导航登录页登录 → 每次登录成功都提取凭据 + set_login_ticket(ticket, host) 保存",
-  "# 说明: 代码环境禁用了 open/os/pathlib 等文件读写, 请使用上面的保存函数",
-];
-
-const PLACEHOLDER_TEXT = PLACEHOLDER_LINES.join("\n");
-
 class PlaceholderWidget implements monaco.editor.IContentWidget {
   private readonly domNode: HTMLDivElement;
 
-  constructor() {
+  constructor(text: string) {
     const el = document.createElement("div");
     el.className = "monaco-placeholder";
-    el.textContent = PLACEHOLDER_TEXT;
+    el.textContent = text;
     el.style.pointerEvents = "none";
     this.domNode = el;
   }
@@ -97,6 +76,8 @@ export default function CodeEditor({ value, onChange, onRun, onFormatError, onEd
   const onFormatErrorRef = useRef(onFormatError);
   onFormatErrorRef.current = onFormatError;
   const { resolved } = useTheme();
+  const { t } = useI18n();
+  const placeholderText = t("editor.placeholder");
 
   const [ready, setReady] = useState(false);
   const [docUri, setDocUri] = useState<string | null>(null);
@@ -165,7 +146,7 @@ export default function CodeEditor({ value, onChange, onRun, onFormatError, onEd
     monaco.editor.registerCommand?.("python.organizeImports", () =>
       void applyOrganizeImports(editor),
     );
-    const widget = new PlaceholderWidget();
+    const widget = new PlaceholderWidget(placeholderText);
     placeholderRef.current = widget;
     syncPlaceholder(editor, widget);
     const model = editor.getModel();
@@ -175,6 +156,11 @@ export default function CodeEditor({ value, onChange, onRun, onFormatError, onEd
     startPythonLsp();
     onEditorReady?.(editor);
   };
+
+  useEffect(() => {
+    const node = placeholderRef.current?.getDomNode();
+    if (node) node.textContent = placeholderText;
+  }, [placeholderText]);
 
   if (!ready) return null;
 

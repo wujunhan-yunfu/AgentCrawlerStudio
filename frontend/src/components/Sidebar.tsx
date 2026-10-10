@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import type { PanelKey, Status } from "../types";
 import type { VersionsState } from "../hooks/useVersions";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n";
 import AgentPanel from "./AgentPanel";
 import BrowserControls from "./BrowserControls";
 import PagesList from "./PagesList";
@@ -18,17 +20,18 @@ interface Props {
   onResizeStart: (e: React.MouseEvent<HTMLDivElement>) => void;
 }
 
-const TITLES: Record<PanelKey, string> = {
-  code: "代码",
-  browser: "浏览器控制",
-  status: "状态",
-  pages: "打开页面",
-  tools: "工具",
-  agent: "爬虫 Agent",
-  versions: "源码管理",
+const TITLES: Record<PanelKey, MessageKey> = {
+  code: "activity.code",
+  browser: "activity.browser",
+  status: "activity.status",
+  pages: "activity.pages",
+  tools: "activity.tools",
+  agent: "activity.agent",
+  versions: "activity.versions",
 };
 
 export default function Sidebar({ panel, onClose, status, onAgentCode, versions, width, onResizeStart }: Props) {
+  const { t } = useI18n();
   let body: ReactNode = null;
   switch (panel) {
     case "browser":
@@ -63,9 +66,9 @@ export default function Sidebar({ panel, onClose, status, onAgentCode, versions,
     >
       {panel !== "agent" ? (
         <div className="sidebar-title">
-          <span>{panel ? TITLES[panel] : ""}</span>
+          <span>{panel ? t(TITLES[panel]) : ""}</span>
           {panel && (
-            <button className="close" title="关闭面板" onClick={onClose}>
+            <button className="close" title={t("sidebar.close")} onClick={onClose}>
               <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                 <path d="M12 4l-4 4 4 4-1 1-4-4-4 4-1-1 4-4-4-4 1-1 4 4 4-4 1 1z" />
               </svg>
@@ -74,7 +77,7 @@ export default function Sidebar({ panel, onClose, status, onAgentCode, versions,
         </div>
       ) : null}
       <div className={`sidebar-body${panel === "agent" ? " agent" : ""}`}>{body}</div>
-      <div className="sidebar-resize-handle" title="拖拽调整宽度" onMouseDown={onResizeStart} />
+      <div className="sidebar-resize-handle" title={t("sidebar.resize")} onMouseDown={onResizeStart} />
     </aside>
   );
 }

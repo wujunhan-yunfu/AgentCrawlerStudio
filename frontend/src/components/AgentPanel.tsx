@@ -1,15 +1,17 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { AgentFeedItem, AgentLoginRequest, AgentPlan, AgentQuestion, AgentStatus } from "../types";
 import { useAgent } from "../hooks/useAgent";
+import { useI18n, t } from "../i18n";
+import type { MessageKey } from "../i18n";
 import AgentDiffCard from "./AgentDiffCard";
 
-const STATUS_TEXT: Record<AgentStatus, string> = {
-  idle: "待命",
-  running: "执行中",
-  waiting: "等待确认",
-  done: "已完成",
-  error: "出错",
-  cancelled: "已取消",
+const STATUS_TEXT: Record<AgentStatus, MessageKey> = {
+  idle: "agent.status.idle",
+  running: "agent.status.running",
+  waiting: "agent.status.waiting",
+  done: "agent.status.done",
+  error: "agent.status.error",
+  cancelled: "agent.status.cancelled",
 };
 
 function TodoBadge({ status }: { status: "pending" | "in_progress" | "completed" }) {
@@ -73,18 +75,18 @@ const TOOL_SPECS: Record<string, ToolSpec> = {
     showCode: true,
     summary: (a) => codeSummary(a, "python"),
   },
-  get_editor_code: { icon: "→", summary: () => "Read 编辑器代码" },
-  set_editor_code: { icon: "←", summary: () => "Edit 编辑器" },
+  get_editor_code: { icon: "→", summary: () => t("agent.tool.readEditorCode") },
+  set_editor_code: { icon: "←", summary: () => t("agent.tool.editEditor") },
   http_request: {
     icon: "%",
     summary: (a) => `${str(a?.method || "GET")} ${truncate(str(a?.url), 50)}`,
   },
-  record_plan: { icon: "✓", summary: () => "记录爬取规划" },
-  ask_user: { icon: "→", summary: () => "需要你确认" },
-  page_login: { icon: "🔐", summary: () => "需要用户登录" },
+  record_plan: { icon: "✓", summary: () => t("agent.tool.recordPlan") },
+  ask_user: { icon: "→", summary: () => t("agent.tool.askUser") },
+  page_login: { icon: "🔐", summary: () => t("agent.tool.pageLogin") },
   archive_content: {
     icon: "⇩",
-    summary: (a) => `Archive${a?.fmt ? ` (${str(a.fmt)})` : ""} 内容`,
+    summary: (a) => `${t("agent.tool.archive")}${a?.fmt ? ` (${str(a.fmt)})` : ""}`,
   },
 };
 
@@ -255,6 +257,7 @@ function FeedItem({ item }: { item: AgentFeedItem }) {
 }
 
 function PlanBody({ plan }: { plan: AgentPlan | null }) {
+  const { t } = useI18n();
   const kv = (label: string, val: unknown) =>
     val === undefined || val === null || val === "" || (Array.isArray(val) && val.length === 0)
       ? null
@@ -276,12 +279,12 @@ function PlanBody({ plan }: { plan: AgentPlan | null }) {
   });
   return (
     <div className="plan-body">
-      {kv("目标", plan?.goal)}
-      {kv("候选网站", plan?.candidate_sites)}
-      {kv("爬取范围", plan?.scope)}
-      {kv("爬取方式", plan?.method)}
-      {kv("需要登录", plan?.login_required === undefined ? undefined : plan?.login_required ? "是" : "否")}
-      {kv("数据字段", plan?.data_fields)}
+      {kv(t("agent.plan.goal"), plan?.goal)}
+      {kv(t("agent.plan.candidateSites"), plan?.candidate_sites)}
+      {kv(t("agent.plan.scope"), plan?.scope)}
+      {kv(t("agent.plan.method"), plan?.method)}
+      {kv(t("agent.plan.loginRequired"), plan?.login_required === undefined ? undefined : plan?.login_required ? t("common.yes") : t("common.no"))}
+      {kv(t("agent.plan.dataFields"), plan?.data_fields)}
       {steps.length > 0 ? (
         <ul className="todo-list plan-steps">
           {steps.map((s, i) => (
@@ -292,7 +295,7 @@ function PlanBody({ plan }: { plan: AgentPlan | null }) {
           ))}
         </ul>
       ) : null}
-      {plan?.assumptions ? <div className="plan-assumptions">假设: {String(plan.assumptions)}</div> : null}
+      {plan?.assumptions ? <div className="plan-assumptions">{t("agent.plan.assumptions", { text: String(plan.assumptions) })}</div> : null}
     </div>
   );
 }
@@ -302,6 +305,7 @@ function PlanPanel({ plan, onClose }: {
   plan: Record<string, unknown> | null;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
   const rawSteps = Array.isArray(plan?.steps) ? plan.steps : [];
@@ -351,25 +355,29 @@ function PlanPanel({ plan, onClose }: {
       className={`plan-float${collapsed ? " collapsed" : ""}`}
       style={!collapsed && height !== null ? { flex: `0 0 ${height}px`, maxHeight: height } : undefined}
     >
-      <div className="plan-resize-handle" title="拖拽调整规划高度" onMouseDown={beginResize} />
+      <div className="plan-resize-handle" title={t("agent.plan.resize")} onMouseDown={beginResize} />
       <div className="plan-float-head">
-        <span className="plan-float-title">📋 爬取规划</span>
+        <span className="plan-float-title">{t("agent.plan.title")}</span>
         {steps.length > 0 ? (
           <span className="todo-progress plan-progress">
             <span className="todo-progress-bar" style={{ width: `${pct}%` }} />
           </span>
         ) : null}
         <span className="plan-float-pct">
-          {steps.length ? `已完成 ${done}/${steps.length}${inProgress ? `, 进行中 ${inProgress}` : ""} · ${pct}%` : ""}
+          {steps.length
+            ? inProgress > 0
+              ? t("agent.plan.progressWithActive", { done, total: steps.length, active: inProgress, pct })
+              : t("agent.plan.progress", { done, total: steps.length, pct })
+            : ""}
         </span>
         <button
           className="plan-float-btn"
-          title={collapsed ? "展开规划" : "收起规划"}
+          title={collapsed ? t("agent.plan.expand") : t("agent.plan.collapse")}
           onClick={() => setCollapsed((c) => !c)}
         >
-          {collapsed ? "▸ 展开" : "▾ 收起"}
+          {collapsed ? t("agent.plan.expandBtn") : t("agent.plan.collapseBtn")}
         </button>
-        <button className="plan-float-btn" title="关闭" onClick={onClose}>✕</button>
+        <button className="plan-float-btn" title={t("common.close")} onClick={onClose}>✕</button>
       </div>
       {!collapsed ? <PlanBody plan={plan} /> : null}
     </div>
@@ -378,6 +386,7 @@ function PlanPanel({ plan, onClose }: {
 
 /** 任务完成后: 展示在所属 AGENT 回答上方的规划卡片 */
 function PlanCard({ plan }: { plan: AgentPlan | null }) {
+  const { t } = useI18n();
   if (!plan) return null;
   const rawSteps = Array.isArray(plan.steps) ? plan.steps : [];
   const steps = rawSteps.map((s) => {
@@ -389,7 +398,7 @@ function PlanCard({ plan }: { plan: AgentPlan | null }) {
   return (
     <div className="agent-card plan-card">
       <div className="agent-card-title">
-        📋 爬取规划
+        {t("agent.plan.title")}
         {steps.length > 0 ? (
           <span className="todo-progress plan-progress">
             <span className="todo-progress-bar" style={{ width: `${pct}%` }} />
@@ -402,22 +411,23 @@ function PlanCard({ plan }: { plan: AgentPlan | null }) {
 }
 
 function TodoCard({ todos }: { todos: { content: string; status: "pending" | "in_progress" | "completed" }[] }) {
+  const { t } = useI18n();
   if (!todos.length) return null;
-  const done = todos.filter((t) => t.status === "completed").length;
+  const done = todos.filter((td) => td.status === "completed").length;
   const pct = Math.round((done / todos.length) * 100);
   return (
     <div className="agent-card todo-card">
       <div className="agent-card-title">
-        ✅ 任务清单 ({done}/{todos.length})
+        {t("agent.todo.title", { done, total: todos.length })}
         <span className="todo-progress">
           <span className="todo-progress-bar" style={{ width: `${pct}%` }} />
         </span>
       </div>
       <ul className="todo-list">
-        {todos.map((t, i) => (
-          <li key={i} className={`todo-item ${t.status}`}>
-            <TodoBadge status={t.status} />
-            <span className="todo-content">{t.content}</span>
+        {todos.map((td, i) => (
+          <li key={i} className={`todo-item ${td.status}`}>
+            <TodoBadge status={td.status} />
+            <span className="todo-content">{td.content}</span>
           </li>
         ))}
       </ul>
@@ -430,6 +440,7 @@ function QuestionForm({ questions, qid, onSubmit }: {
   qid: string | null;
   onSubmit: (answers: Record<string, unknown>) => void;
 }) {
+  const { t } = useI18n();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [multi, setMulti] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
@@ -461,7 +472,7 @@ function QuestionForm({ questions, qid, onSubmit }: {
 
   return (
     <div className="agent-card question-card">
-      <div className="agent-card-title">❓ 需要你的确认</div>
+      <div className="agent-card-title">{t("agent.question.title")}</div>
       {questions.map((q, i) => {
         const def = q.default ?? "";
         if (q.type === "text") {
@@ -472,7 +483,7 @@ function QuestionForm({ questions, qid, onSubmit }: {
                 type="text"
                 value={(values[q.key] as string) ?? ""}
                 onChange={(e) => setVal(q.key, e.target.value)}
-                placeholder="请填写..."
+                placeholder={t("agent.question.placeholder")}
               />
             </div>
           );
@@ -480,7 +491,7 @@ function QuestionForm({ questions, qid, onSubmit }: {
         if (q.type === "multi") {
           return (
             <div key={q.key} className="question-item">
-              <div className="question-title">{i + 1}. {q.title} (可多选)</div>
+              <div className="question-title">{i + 1}. {q.title} {t("agent.question.multi")}</div>
               {(q.options ?? []).map((opt) => {
                 const checked = (multi[q.key] ?? []).includes(opt);
                 return (
@@ -521,7 +532,7 @@ function QuestionForm({ questions, qid, onSubmit }: {
         );
       })}
       <button className="primary" disabled={!qid || busy} onClick={handleSubmit}>
-        提交确认
+        {t("agent.question.submit")}
       </button>
     </div>
   );
@@ -541,6 +552,7 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
   onRefreshCaptcha: () => void;
   onRefreshQr: () => void;
 }) {
+  const { t } = useI18n();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -590,10 +602,10 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
     floating ? (
       <div className="login-float-card" style={{ left: pos.x, top: pos.y }}>
         <div className="login-float-title" onMouseDown={beginDrag}>
-          <span>🔐 {login.login_type === "qr" ? "二维码登录" : "账号登录"}</span>
+          <span>🔐 {login.login_type === "qr" ? t("login.qrTitle") : t("login.accountTitle")}</span>
           <button
             className="login-float-collapse"
-            title="收起为浮动按钮(避免遮挡放大画面)"
+            title={t("login.collapseHint")}
             onClick={() => setCollapsed(true)}
           >
             <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
@@ -612,10 +624,10 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
       <button
         className="login-float-pill"
         style={{ left: pos.x, top: pos.y }}
-        title="展开登录面板"
+        title={t("login.expand")}
         onClick={() => setCollapsed(false)}
       >
-        🔐 登录中 · 点击展开
+        {t("login.loggingInCollapsed")}
       </button>
     );
   }
@@ -623,12 +635,12 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
   if (login.login_type === "qr") {
     return wrap(
       <div className="agent-card question-card login-card">
-        <div className="agent-card-title">🔐 二维码登录</div>
+        <div className="agent-card-title">🔐 {t("login.qrTitle")}</div>
         <div className="question-title">
-          {login.message ?? "请在放大后的浏览器实时画面中用手机 APP 扫码登录。"}
+          {login.message ?? t("login.qrHint")}
         </div>
         <div className="question-title login-hint">
-          系统已放大浏览器实时画面并持续监听登录跳转，扫码成功后 Agent 会自动继续。
+          {t("login.agentQrSub")}
         </div>
         <div className="login-actions">
           <button
@@ -640,10 +652,10 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
               setTimeout(() => setBusy(false), 500);
             }}
           >
-            我已经完成扫码，继续
+            {t("login.qrDone")}
           </button>
-          <button onClick={onRefreshQr}>刷新二维码</button>
-          <button onClick={onCancel}>取消登录</button>
+          <button onClick={onRefreshQr}>{t("login.refreshQr")}</button>
+          <button onClick={onCancel}>{t("login.cancel")}</button>
         </div>
       </div>,
     );
@@ -651,34 +663,34 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
 
   return wrap(
     <div className="agent-card question-card login-card">
-      <div className="agent-card-title">🔐 账号登录</div>
+      <div className="agent-card-title">🔐 {t("login.accountTitle")}</div>
       {(login.fields ?? []).map((f) => (
         <div key={f.key} className="question-item">
           <div className="question-title">{f.label}</div>
           <input
             type={f.input_type === "password" ? "password" : "text"}
             value={(values[f.key] as string) ?? ""}
-            placeholder={f.placeholder || `请输入${f.label}`}
+            placeholder={f.placeholder || t("login.enterField", { label: f.label })}
             onChange={(e) => setVal(f.key, e.target.value)}
           />
         </div>
       ))}
       {login.captcha && login.captcha.type !== "none" ? (
         <div className="question-item">
-          <div className="question-title">验证码</div>
+          <div className="question-title">{t("login.captcha")}</div>
           <div className="login-captcha-row">
             <input
               type="text"
               value={(values.captcha as string) ?? ""}
-              placeholder="请输入验证码"
+              placeholder={t("login.enterCaptcha")}
               onChange={(e) => setVal("captcha", e.target.value)}
             />
             {login.captcha.type === "image" && login.captcha.image ? (
               <img
                 className="login-captcha-img"
                 src={login.captcha.image}
-                alt="验证码"
-                title="点击刷新"
+                alt={t("login.captcha")}
+                title={t("login.clickRefresh")}
                 onClick={onRefreshCaptcha}
               />
             ) : null}
@@ -692,12 +704,12 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
                 onSendCode();
               }}
             >
-              {countdown > 0 ? `${countdown}s 后重发` : "发送验证码"}
+              {countdown > 0 ? t("login.resend", { count: countdown }) : t("login.sendCode")}
             </button>
           ) : null}
           {login.captcha.type === "image" ? (
             <button className="login-send-code" onClick={onRefreshCaptcha}>
-              换一张
+              {t("login.changeImage")}
             </button>
           ) : null}
         </div>
@@ -712,9 +724,9 @@ function LoginForm({ login, onSubmit, onCancel, onSendCode, onRefreshCaptcha, on
             setTimeout(() => setBusy(false), 500);
           }}
         >
-          {login.submit_label ? `提交${login.submit_label}` : "提交登录"}
+          {login.submit_label ? t("login.submitLabel", { label: login.submit_label }) : t("login.submit")}
         </button>
-        <button onClick={onCancel}>取消登录</button>
+        <button onClick={onCancel}>{t("login.cancel")}</button>
       </div>
     </div>,
   );
@@ -768,6 +780,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
 }>(function SessionDropdown({
   activeId, sessions, unread, onSelect, onNew, onDelete, onRename,
 }, ref) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -777,7 +790,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
   const activeTitle = activeId
     ? (sessions.find((s) => s.id === activeId)?.title ?? "")
     : "";
-  const label = activeTitle || "新对话";
+  const label = activeTitle || t("agent.newChat");
   const unreadCount = sessions.reduce(
     (n, s) => (s.id !== activeId && unread[s.id] ? n + 1 : n),
     0,
@@ -816,7 +829,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
 
   const dotState = (sid: string | null): SessionIconState => sessionIconState(sessions, sid);
   const dotLabel = (state: SessionIconState) =>
-    state === "running" ? "执行中" : state === "busy" ? "被占用" : "可用";
+    state === "running" ? t("agent.dot.running") : state === "busy" ? t("agent.dot.busy") : t("agent.dot.idle");
 
   const pick = (fn: () => void) => {
     setOpen(false);
@@ -875,11 +888,11 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
             onBlur={() => {
               if (!renaming) cancelEdit();
             }}
-            placeholder="输入标题..."
+            placeholder={t("agent.titlePlaceholder")}
           />
           <button
             className="agent-session-edit-btn ok"
-            title="保存标题"
+            title={t("agent.saveTitle")}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => void confirmEdit()}
           >
@@ -887,7 +900,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
           </button>
           <button
             className="agent-session-edit-btn"
-            title="取消"
+            title={t("common.cancel")}
             onMouseDown={(e) => e.preventDefault()}
             onClick={cancelEdit}
           >
@@ -902,7 +915,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
         >
           <span className="agent-session-select-label">{displayTitle(label)}</span>
           {unreadCount > 0 ? (
-            <span className="agent-session-unread-badge" title={`${unreadCount} 个会话有未读消息`}>
+            <span className="agent-session-unread-badge" title={t("agent.unreadSessions", { count: unreadCount })}>
               {unreadCount}
             </span>
           ) : null}
@@ -920,15 +933,15 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
             <button
               className={`agent-menu-item${!activeId ? " active" : ""}`}
               role="menuitem"
-              title="新建会话"
+              title={t("agent.newSessionTitle")}
               onClick={() => pick(onNew)}
             >
               <span className="agent-menu-dot">
                 <span className={`agent-status-dot ${dotState(null)}`} />
               </span>
-              <span className="agent-menu-title">新对话</span>
+              <span className="agent-menu-title">{t("agent.newChat")}</span>
               <span className="agent-menu-count" title={dotLabel(dotState(null))}>
-                {dotState(null) === "busy" ? "忙" : dotState(null) === "running" ? "执行中" : "可用"}
+                {dotState(null) === "busy" ? t("agent.busy") : dotState(null) === "running" ? t("agent.running") : t("agent.available")}
               </span>
             </button>
             {sessions.length > 0 ? <div className="agent-menu-sep" /> : null}
@@ -956,11 +969,11 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
                       onBlur={() => {
                         if (!renaming) cancelEdit();
                       }}
-                      placeholder="输入标题..."
+                      placeholder={t("agent.titlePlaceholder")}
                     />
                     <button
                       className="agent-session-edit-btn ok"
-                      title="保存标题"
+                      title={t("agent.saveTitle")}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => void confirmEdit()}
                     >
@@ -968,7 +981,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
                     </button>
                     <button
                       className="agent-session-edit-btn"
-                      title="取消"
+                      title={t("common.cancel")}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={cancelEdit}
                     >
@@ -993,11 +1006,11 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
                     )}
                   </span>
                   <span className="agent-menu-title" title={s.title}>{displayTitle(s.title)}</span>
-                  {unread[s.id] ? <span className="agent-menu-unread" title="有未读消息" /> : null}
+                  {unread[s.id] ? <span className="agent-menu-unread" title={t("agent.unread")} /> : null}
                   <span className="agent-menu-count">{s.message_count}</span>
                   <button
                     className="agent-session-edit"
-                    title="修改标题"
+                    title={t("agent.renameTitle")}
                     onClick={(e) => {
                       e.stopPropagation();
                       startEdit(s.id, s.title);
@@ -1009,7 +1022,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
                   </button>
                   <button
                     className="agent-session-del"
-                    title="删除会话"
+                    title={t("agent.deleteSession")}
                     onClick={(e) => {
                       e.stopPropagation();
                       onDelete(s.id);
@@ -1035,6 +1048,7 @@ export default function AgentPanel({
   onClose?: () => void;
 }) {
   const agent = useAgent();
+  const { t } = useI18n();
   const feedRef = useRef<HTMLDivElement | null>(null);
   const sessionDropdownRef = useRef<SessionDropdownHandle | null>(null);
   const [taskInput, setTaskInput] = useState("");
@@ -1068,10 +1082,10 @@ export default function AgentPanel({
   const iconState = sessionIconState(agent.sessions, agent.activeId);
   const iconLabel =
     iconState === "running"
-      ? STATUS_TEXT[agent.status]
+      ? t(STATUS_TEXT[agent.status])
       : iconState === "busy"
-        ? "Agent 忙碌, 其他会话正在执行"
-        : "Agent 空闲可用";
+        ? t("agent.busyHint")
+        : t("agent.idleHint");
 
   const dismissPlan = () => {
     const sid = agent.activeId;
@@ -1101,7 +1115,7 @@ export default function AgentPanel({
   return (
     <div className={`agent-panel${busy ? " running" : ""}`}>
       <div className="agent-titlebar">
-        <span className="agent-title">爬虫 Agent</span>
+        <span className="agent-title">{t("activity.agent")}</span>
         <StatusIcon state={iconState} label={iconLabel} />
         {agent.crawlerId ? <span className="agent-crawler-tag">{agent.crawlerId}</span> : null}
         <SessionDropdown
@@ -1118,7 +1132,7 @@ export default function AgentPanel({
           <>
             <button
               className="agent-session-new"
-              title="修改当前会话标题"
+              title={t("agent.editTitle")}
               onClick={() => sessionDropdownRef.current?.editActive()}
             >
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1127,7 +1141,7 @@ export default function AgentPanel({
             </button>
             <button
               className="agent-session-new"
-              title="新建会话"
+              title={t("agent.newSessionTitle")}
               onClick={handleNew}
             >
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1137,10 +1151,10 @@ export default function AgentPanel({
             </button>
           </>
         ) : null}
-        {!agent.connected ? <span className="agent-offline" title="连接断开, 重连中...">断开</span> : null}
+        {!agent.connected ? <span className="agent-offline" title={t("agent.offlineTitle")}>{t("agent.offline")}</span> : null}
         <span className="agent-titlebar-right">
           {onClose ? (
-            <button className="close" title="关闭面板" onClick={onClose}>
+            <button className="close" title={t("sidebar.close")} onClick={onClose}>
               <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                 <path d="M12 4l-4 4 4 4-1 1-4-4-4 4-1-1 4-4-4-4 1-1 4 4 4-4 1 1z" />
               </svg>
@@ -1152,7 +1166,7 @@ export default function AgentPanel({
       <div className="agent-feed" ref={feedRef}>
         {!hasSession ? (
           <div className="agent-welcome">
-            <p className="hint">只需一句话告诉我你的爬虫需求, 我来帮你完成。</p>
+            <p className="hint">{t("agent.welcome")}</p>
           </div>
         ) : (
           <>
@@ -1184,7 +1198,7 @@ export default function AgentPanel({
       {showPlan ? <PlanPanel plan={agent.plan} onClose={dismissPlan} /> : null}
       <div className="agent-input-bar">
         {hasSession && !busy && agent.activeSession ? (
-          <span className="hint agent-done-hint">当前会话可继续发送消息进行多轮对话</span>
+          <span className="hint agent-done-hint">{t("agent.continueHint")}</span>
         ) : null}
         <textarea
           value={taskInput}
@@ -1192,12 +1206,12 @@ export default function AgentPanel({
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) void handleSend();
           }}
-          placeholder="描述你的需求, 如: 抓取某网站数据 / 优化编辑器里的爬虫代码 (Ctrl+Enter 发送)..."
+          placeholder={t("agent.inputPlaceholder")}
           rows={2}
         />
         {busy ? (
           <button className="danger send-btn" onClick={() => void agent.stop()}>
-            停止
+            {t("agent.stop")}
           </button>
         ) : (
           <button
@@ -1205,7 +1219,7 @@ export default function AgentPanel({
             onClick={() => void handleSend()}
             disabled={!taskInput.trim() || sending}
           >
-            {sending ? "发送中..." : hasSession ? "发送" : "新建并发送"}
+            {sending ? t("agent.sending") : hasSession ? t("agent.send") : t("agent.createAndSend")}
           </button>
         )}
       </div>

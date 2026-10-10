@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { storageApi, type Cookie, type StorageItem } from "../utils/devtoolsApi";
 import { api } from "../utils/api";
+import { useI18n } from "../i18n";
 
 interface Props {
   // 占位
@@ -15,6 +16,7 @@ function EditableText({
   onSave: (v: string) => Promise<void>;
   title?: string;
 }) {
+  const { t } = useI18n();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
@@ -48,7 +50,7 @@ function EditableText({
   return (
     <span
       className="storage-cell"
-      title={busy ? "保存中..." : (title ?? "双击编辑")}
+      title={busy ? t("appP.saving") : (title ?? t("appP.dblclick"))}
       onDoubleClick={() => {
         setDraft(value);
         setEditing(true);
@@ -66,6 +68,7 @@ function StorageTable({
   origin: string;
   session: boolean;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<StorageItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newKey, setNewKey] = useState("");
@@ -76,9 +79,9 @@ function StorageTable({
       setItems(r.items ?? []);
       setError(null);
     } else {
-      setError(r.error ?? "读取失败");
+      setError(r.error ?? t("appP.readFailed"));
     }
-  }, [origin, session]);
+  }, [origin, session, t]);
 
   useEffect(() => {
     void reload();
@@ -134,7 +137,7 @@ function StorageTable({
                     void reload();
                   }}
                 >
-                  删除
+                  {t("common.delete")}
                 </button>
               </td>
             </tr>
@@ -144,20 +147,21 @@ function StorageTable({
       <div className="storage-add">
         <input
           className="storage-key"
-          placeholder="新键名"
+          placeholder={t("appP.newKey")}
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void add();
           }}
         />
-        <button className="ghost" onClick={() => void add()}>添加</button>
+        <button className="ghost" onClick={() => void add()}>{t("appP.add")}</button>
       </div>
     </div>
   );
 }
 
 function CookieTable({ origin }: { origin: string }) {
+  const { t } = useI18n();
   const [cookies, setCookies] = useState<Cookie[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -167,9 +171,9 @@ function CookieTable({ origin }: { origin: string }) {
       setCookies(r.cookies ?? []);
       setError(null);
     } else {
-      setError(r.error ?? "读取失败");
+      setError(r.error ?? t("appP.readFailed"));
     }
-  }, [origin]);
+  }, [origin, t]);
 
   useEffect(() => {
     void reload();
@@ -226,7 +230,7 @@ function CookieTable({ origin }: { origin: string }) {
                     void reload();
                   }}
                 >
-                  删除
+                  {t("common.delete")}
                 </button>
               </td>
             </tr>
@@ -238,6 +242,7 @@ function CookieTable({ origin }: { origin: string }) {
 }
 
 function IdbPanel({ origin }: { origin: string }) {
+  const { t } = useI18n();
   const [dbs, setDbs] = useState<string[]>([]);
   const [stores, setStores] = useState<{ name: string }[]>([]);
   const [db, setDb] = useState<string | null>(null);
@@ -276,8 +281,8 @@ function IdbPanel({ origin }: { origin: string }) {
   return (
     <div className="idb-panel">
       <div className="idb-side">
-        <div className="idb-side-title">数据库</div>
-        {dbs.length === 0 ? <div className="hint">无数据库</div> : null}
+        <div className="idb-side-title">{t("appP.databases")}</div>
+        {dbs.length === 0 ? <div className="hint">{t("appP.noDatabases")}</div> : null}
         {dbs.map((d) => (
           <div
             key={d}
@@ -291,8 +296,8 @@ function IdbPanel({ origin }: { origin: string }) {
       <div className="idb-main">
         {db ? (
           <>
-            <div className="idb-side-title">对象仓库 · {db}</div>
-            {stores.length === 0 ? <div className="hint">无对象仓库</div> : null}
+            <div className="idb-side-title">{t("appP.objectStores", { db })}</div>
+            {stores.length === 0 ? <div className="hint">{t("appP.noStores")}</div> : null}
             {stores.map((s) => (
               <div
                 key={s.name}
@@ -304,7 +309,7 @@ function IdbPanel({ origin }: { origin: string }) {
             ))}
           </>
         ) : (
-          <div className="hint">选择数据库</div>
+          <div className="hint">{t("appP.selectDb")}</div>
         )}
         {store ? (
           <div className="idb-data">
@@ -312,8 +317,8 @@ function IdbPanel({ origin }: { origin: string }) {
               <thead>
                 <tr>
                   <th>Key</th>
-                  <th>主键</th>
-                  <th>值</th>
+                  <th>{t("appP.primaryKey")}</th>
+                  <th>{t("appP.value")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -328,7 +333,7 @@ function IdbPanel({ origin }: { origin: string }) {
             </table>
             {hasMore ? (
               <button className="ghost" onClick={() => void openStore(store, skip + 50)}>
-                加载更多
+                {t("appP.loadMore")}
               </button>
             ) : null}
           </div>
@@ -339,6 +344,7 @@ function IdbPanel({ origin }: { origin: string }) {
 }
 
 export default function ApplicationPanel(_props: Props) {
+  const { t } = useI18n();
   const [origin, setOrigin] = useState<string | null>(null);
   const [section, setSection] = useState<"local" | "session" | "cookies" | "idb">("local");
   const [error, setError] = useState<string | null>(null);
@@ -347,7 +353,7 @@ export default function ApplicationPanel(_props: Props) {
     void (async () => {
       const r = await storageApi.origin();
       if (r.ok) setOrigin(r.origin ?? null);
-      else setError(r.error ?? "获取 origin 失败");
+      else setError(r.error ?? t("appP.originFailed"));
     })();
     // 存储变更实时刷新
     let ws: WebSocket | null = null;
@@ -370,16 +376,16 @@ export default function ApplicationPanel(_props: Props) {
         /* ignore */
       }
     };
-  }, []);
+  }, [t]);
 
   if (error) return <div className="bad net-hint">{error}</div>;
-  if (!origin) return <div className="hint net-hint">获取页面 origin...</div>;
+  if (!origin) return <div className="hint net-hint">{t("appP.originLoading")}</div>;
 
   const nav = (
     <div className="app-side">
       <div className="app-side-origin" title={origin}>{origin}</div>
-      <div className={`app-item ${section === "local" ? "active" : ""}`} onClick={() => setSection("local")}>本地存储</div>
-      <div className={`app-item ${section === "session" ? "active" : ""}`} onClick={() => setSection("session")}>会话存储</div>
+      <div className={`app-item ${section === "local" ? "active" : ""}`} onClick={() => setSection("local")}>{t("appP.localStorage")}</div>
+      <div className={`app-item ${section === "session" ? "active" : ""}`} onClick={() => setSection("session")}>{t("appP.sessionStorage")}</div>
       <div className={`app-item ${section === "cookies" ? "active" : ""}`} onClick={() => setSection("cookies")}>Cookies</div>
       <div className={`app-item ${section === "idb" ? "active" : ""}`} onClick={() => setSection("idb")}>IndexedDB</div>
     </div>
@@ -390,8 +396,8 @@ export default function ApplicationPanel(_props: Props) {
       {nav}
       <div className="app-main">
         <div className="app-section-title">
-          {section === "local" && "本地存储"}
-          {section === "session" && "会话存储"}
+          {section === "local" && t("appP.localStorage")}
+          {section === "session" && t("appP.sessionStorage")}
           {section === "cookies" && "Cookies"}
           {section === "idb" && "IndexedDB"}
         </div>

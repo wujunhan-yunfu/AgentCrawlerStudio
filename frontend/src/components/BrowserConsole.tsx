@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ConsoleMessage } from "../hooks/useConsole";
+import type { MessageKey } from "../i18n";
+import { useI18n } from "../i18n";
 import ObjectTree from "./ObjectTree";
 
 interface Props {
@@ -19,12 +21,12 @@ const LEVEL_RANK: Record<string, number> = {
   error: 3,
 };
 
-const FILTERS = [
-  { key: "all", label: "所有级别", rank: -1 },
-  { key: "verbose", label: "详细", rank: 0 },
-  { key: "info", label: "信息", rank: 1 },
-  { key: "warning", label: "警告", rank: 2 },
-  { key: "error", label: "错误", rank: 3 },
+const FILTERS: { key: string; labelKey: MessageKey; rank: number }[] = [
+  { key: "all", labelKey: "console.all", rank: -1 },
+  { key: "verbose", labelKey: "console.verbose", rank: 0 },
+  { key: "info", labelKey: "console.info", rank: 1 },
+  { key: "warning", labelKey: "console.warning", rank: 2 },
+  { key: "error", labelKey: "console.error", rank: 3 },
 ];
 
 function fmtTime(ts: number): string {
@@ -56,8 +58,9 @@ function cellText(v: unknown): string {
 }
 
 function Table({ data }: { data: unknown }) {
+  const { t } = useI18n();
   if (!Array.isArray(data) || data.length === 0) {
-    return <span className="cplain">(空表)</span>;
+    return <span className="cplain">{t("console.emptyTable")}</span>;
   }
   const first = data[0];
   const cols =
@@ -125,6 +128,7 @@ function ConsoleRow({ msg, timestamps }: { msg: ConsoleMessage; timestamps: bool
 }
 
 export default function BrowserConsole({ messages, connected, onClear, onEvaluate }: Props) {
+  const { t } = useI18n();
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [timestamps, setTimestamps] = useState(false);
@@ -195,28 +199,28 @@ export default function BrowserConsole({ messages, connected, onClear, onEvaluat
   return (
     <div className="bconsole">
       <div className="bconsole-toolbar">
-        <select value={filter} onChange={(e) => setFilter(e.target.value)} title="级别筛选">
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} title={t("console.levelFilter")}>
           {FILTERS.map((f) => (
             <option key={f.key} value={f.key}>
-              {f.label}
+              {t(f.labelKey)}
             </option>
           ))}
         </select>
         <input
           className="bconsole-filter"
           type="text"
-          placeholder="筛选"
+          placeholder={t("console.filter")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           spellCheck={false}
         />
-        <label className="bconsole-toggle" title="显示时间戳">
+        <label className="bconsole-toggle" title={t("console.showTimestamps")}>
           <input
             type="checkbox"
             checked={timestamps}
             onChange={(e) => setTimestamps(e.target.checked)}
           />
-          时间戳
+          {t("console.timestamps")}
         </label>
         <span className="bconsole-counts">
           <span className="badge error">{errorCount}</span>
@@ -224,13 +228,13 @@ export default function BrowserConsole({ messages, connected, onClear, onEvaluat
         </span>
         <span className="bconsole-actions">
           <button className="ghost" onClick={onClear}>
-            清空
+            {t("network.clear")}
           </button>
         </span>
       </div>
       <div className="bconsole-list" ref={listRef}>
-        {!connected ? <div className="hint">浏览器控制台未连接, 正在重试...</div> : null}
-        {connected && filtered.length === 0 ? <div className="hint">暂无输出。</div> : null}
+        {!connected ? <div className="hint">{t("console.disconnected")}</div> : null}
+        {connected && filtered.length === 0 ? <div className="hint">{t("console.noOutput")}</div> : null}
         {filtered.map((m, i) => (
           <ConsoleRow key={i} msg={m} timestamps={timestamps} />
         ))}
@@ -242,7 +246,7 @@ export default function BrowserConsole({ messages, connected, onClear, onEvaluat
           value={expr}
           onChange={(e) => setExpr(e.target.value)}
           onKeyDown={onKey}
-          placeholder={evaluating ? "执行中..." : "在页面中执行 JS 表达式(Enter 执行)"}
+          placeholder={evaluating ? t("console.running") : t("console.placeholder")}
           disabled={evaluating}
           spellCheck={false}
           autoComplete="off"

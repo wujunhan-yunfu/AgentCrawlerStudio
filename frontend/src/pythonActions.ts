@@ -1,6 +1,7 @@
 import * as monaco from "monaco-editor";
 import libIndex from "./libApi.json";
 import { formatCode } from "./utils/api";
+import { t } from "./i18n";
 
 // 基于本地类库索引的 code actions:
 //   1. auto-import 快速修复: 诊断报"未定义 X"时, 若 X 命中 libApi/playwrightApi 的
@@ -79,7 +80,7 @@ function makeAutoImportAction(
   };
 
   return {
-    title: `添加 import: ${importLine}`,
+    title: t("python.addImport", { import: importLine }),
     kind: "quickfix",
     isPreferred: false,
     diagnostics: [],
@@ -147,11 +148,11 @@ export function registerPythonCodeActions(): void {
 
       // organize imports
       actions.push({
-        title: "整理导入 (isort)",
+        title: t("python.organizeIsort"),
         kind: "source.organizeImports",
         command: {
           id: "python.organizeImports",
-          title: "整理导入",
+          title: t("python.organizeImports"),
         },
       });
 

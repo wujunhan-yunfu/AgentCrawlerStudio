@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 function metaApiPrefix(): string | null {
   if (typeof document === "undefined") return null;
   return (
@@ -174,7 +176,7 @@ export async function runCodeStream(
   });
   if (!r.ok || !r.body) {
     const text = await r.text().catch(() => "");
-    throw new Error(text || `请求失败: HTTP ${r.status}`);
+    throw new Error(text || t("api.requestFailed", { status: r.status }));
   }
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
@@ -205,7 +207,7 @@ export async function runCodeStream(
       sep = buf.indexOf("\n\n");
     }
   }
-  throw new Error("运行流意外中断(未收到结束标记)");
+  throw new Error(t("api.streamInterrupted"));
 }
 
 export interface RunLoginField {
@@ -270,7 +272,7 @@ export function restart(): Promise<unknown> {
 export async function screenshotBlob(): Promise<Blob> {
   const r = await fetch(api("/screenshot"), { method: "POST" });
   if (!r.ok) {
-    throw new Error(`截图失败: ${r.status}`);
+    throw new Error(t("api.screenshotFailed", { status: r.status }));
   }
   return r.blob();
 }
@@ -506,7 +508,7 @@ export async function exportScript(opts: {
     } catch {
       /* 非 JSON 错误体 */
     }
-    throw new Error(detail || `导出失败: HTTP ${r.status}`);
+    throw new Error(detail || t("api.exportFailed", { status: r.status }));
   }
   return r.blob();
 }

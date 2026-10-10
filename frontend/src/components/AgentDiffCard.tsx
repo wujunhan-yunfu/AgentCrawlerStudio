@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { diffHunks, diffStatsFromHunks, type DiffHunk } from "../utils/diff";
+import { useI18n } from "../i18n";
 
 interface Props {
   from: string;
@@ -13,6 +14,7 @@ const CONTEXT = 3;
  * 展开后按 git diff 渲染变更行(两侧行号 + 红绿底色 + +/− 符号)。
  */
 export default function AgentDiffCard({ from, to }: Props) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(true);
   const { hunks, stats } = useMemo(() => {
     const h = diffHunks(from, to, CONTEXT);
@@ -27,7 +29,7 @@ export default function AgentDiffCard({ from, to }: Props) {
         className="oc-block-head"
         role="button"
         tabIndex={0}
-        title={open ? "收起" : "展开"}
+        title={open ? t("common.collapse") : t("common.expand")}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -37,7 +39,7 @@ export default function AgentDiffCard({ from, to }: Props) {
         }}
       >
         <span className="oc-block-ico">←</span>
-        <span className="oc-block-title">Edit 编辑器</span>
+        <span className="oc-block-title">{t("agent.tool.editEditor")}</span>
         <span className="oc-diff-stats">
           <span className="stat-add">+{stats.add}</span>
           <span className="stat-del">−{stats.del}</span>

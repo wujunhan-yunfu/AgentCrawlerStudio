@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { navigate } from "../utils/api";
+import { useI18n } from "../i18n";
 
 export default function BrowserControls() {
+  const { t } = useI18n();
   const [url, setUrl] = useState("");
 
   const goto = async (newPage: boolean) => {
@@ -9,7 +11,7 @@ export default function BrowserControls() {
     try {
       await navigate(target, newPage);
     } catch (e) {
-      window.alert(`操作失败: ${e instanceof Error ? e.message : e}`);
+      window.alert(t("browser.opFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -35,13 +37,13 @@ export default function BrowserControls() {
       />
       <div className="row">
         <button className="primary" onClick={() => void goto(false)}>
-          跳转
+          {t("browser.go")}
         </button>
         <button className="ghost" onClick={() => void goto(true)}>
-          新标签打开
+          {t("browser.newTab")}
         </button>
         <button className="ghost" onClick={() => void reload()}>
-          刷新
+          {t("browser.reload")}
         </button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { RemoteControlState } from "../hooks/useRemoteControl";
 import type { HighlightBox } from "./ElementsPanel";
+import { useI18n } from "../i18n";
 
 interface Props {
   imgRef: React.RefObject<HTMLImageElement>;
@@ -60,6 +61,7 @@ export default function LiveView({
   imgRef, connected, lagMs, fps, hasBrowser, connecting, stopped, kicked, width, height,
   highlight, maximized, onToggle, control, running,
 }: Props) {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<HTMLDivElement>(null);
   const pendingMoveRef = useRef<{ x: number; y: number; buttons: number; modifiers: Mods } | null>(null);
@@ -69,7 +71,7 @@ export default function LiveView({
   const [textDraft, setTextDraft] = useState("");
   const [textFeedback, setTextFeedback] = useState<{ text: string; error: boolean } | null>(null);
 
-  const logoTitle = connecting ? "正在连接服务器..." : "无活跃浏览器进程";
+  const logoTitle = connecting ? t("live.connecting") : t("live.noBrowser");
   // 远程控制仅在放大窗口时可用; 缩小(右侧)时保持原行为: 点击窗口放大
   const controlActive = maximized && controlOn && !running && control.enabled && control.connected && hasBrowser;
 
@@ -225,14 +227,14 @@ export default function LiveView({
 
   // 文本输入框: 输入框内中文 IME 组合实时预览到页面(compose), 组合结束时提交(commit)
   const submitText = () => {
-    const t = textDraft;
-    if (!t.trim()) {
+    const draft = textDraft;
+    if (!draft.trim()) {
       setTextDraft("");
       return;
     }
-    control.send({ type: "text", action: "insert", text: t });
+    control.send({ type: "text", action: "insert", text: draft });
     setTextDraft("");
-    setTextFeedback({ text: "已发送", error: false });
+    setTextFeedback({ text: t("live.sent"), error: false });
     if (feedbackTimerRef.current) window.clearTimeout(feedbackTimerRef.current);
     feedbackTimerRef.current = window.setTimeout(() => setTextFeedback(null), 1500);
   };
@@ -261,10 +263,10 @@ export default function LiveView({
   const textFeedbackText = control.error ?? textFeedback?.text;
 
   const hint = (() => {
-    if (!controlOn) return "远程控制已关闭";
-    if (running) return "脚本执行中，远程控制已暂停";
-    if (!control.connected) return "控制通道连接中...";
-    if (!control.enabled) return "浏览器无活动页面";
+    if (!controlOn) return t("live.controlOff");
+    if (running) return t("live.controlPaused");
+    if (!control.connected) return t("live.controlConnecting");
+    if (!control.enabled) return t("live.noActivePage");
     return null;
   })();
 
@@ -277,10 +279,10 @@ export default function LiveView({
           if (!maximized) onToggle();
           else if (!controlActive) onToggle();
         }}
-        title={maximized ? undefined : "点击放大"}
+        title={maximized ? undefined : t("live.clickZoom")}
       >
         <div className="canvas" ref={canvasRef}>
-          <img ref={imgRef} className="live" alt="实时画面" draggable={false} />
+          <img ref={imgRef} className="live" alt={t("live.live")} draggable={false} />
           {(!hasBrowser || connecting) && <BrowserLogo title={logoTitle} />}
           {highlightStyle ? <div className="live-highlight" style={highlightStyle} /> : null}
           <div
@@ -302,7 +304,7 @@ export default function LiveView({
           {maximized ? (
             <div className="live-toolbar">
               <button
-                title={controlOn ? "关闭远程控制" : "开启远程控制"}
+                title={controlOn ? t("live.disableControl") : t("live.enableControl")}
                 onClick={(e) => {
                   e.stopPropagation();
                   setControlOn((v) => !v);
@@ -310,7 +312,7 @@ export default function LiveView({
               >
                 {controlOn ? "🖱" : "🚫"}
               </button>
-              <button title="点击缩小" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+              <button title={t("live.clickShrink")} onClick={(e) => { e.stopPropagation(); onToggle(); }}>
                 ⤡
               </button>
             </div>
@@ -320,7 +322,7 @@ export default function LiveView({
             <div className="live-textinput">
               <textarea
                 rows={1}
-                placeholder="输入文本，Enter 发送（支持中文 IME）"
+                placeholder={t("live.textPlaceholder")}
                 value={textDraft}
                 onChange={(e) => setTextDraft(e.target.value)}
                 onKeyDown={onTextKeyDown}
@@ -328,7 +330,7 @@ export default function LiveView({
                 onCompositionEnd={onTextCompositionEnd}
               />
               <button className="primary small" onClick={submitText}>
-                输入
+                {t("live.input")}
               </button>
             </div>
           ) : null}
@@ -338,10 +340,10 @@ export default function LiveView({
             </div>
           ) : null}
           <div className="live-stats">
-            <span className={connected ? "ok" : stopped ? "bad" : undefined}>{connected ? "实时画面" : kicked ? "已被其他窗口接管" : stopped ? "未连接" : "重连中..."}</span>
-            <span>延迟 {lagMs != null ? `${Math.round(lagMs)} ms` : "-"}</span>
+            <span className={connected ? "ok" : stopped ? "bad" : undefined}>{connected ? t("live.live") : kicked ? t("live.kicked") : stopped ? t("live.disconnected") : t("live.reconnecting")}</span>
+            <span>{t("live.latency", { ms: lagMs != null ? `${Math.round(lagMs)} ms` : "-" })}</span>
             <span>{fps != null ? `${Math.round(fps)} fps` : "-"}</span>
-            {controlActive ? <span className="ok">可操控</span> : null}
+            {controlActive ? <span className="ok">{t("live.controllable")}</span> : null}
           </div>
         </div>
       </div>

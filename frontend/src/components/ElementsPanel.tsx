@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { domApi, type DomNode } from "../utils/devtoolsApi";
 import { api } from "../utils/api";
+import { useI18n } from "../i18n";
 
 export interface HighlightBox {
   x: number;
@@ -93,21 +94,22 @@ function TreeNode({
 }
 
 function AttrPanel({ node }: { node: DomNode }) {
+  const { t } = useI18n();
   const attrs = Object.entries(node.attrs);
   const isText = node.t === 3 || node.t === 8;
   return (
     <div className="el-attr-panel">
       <div className="net-detail-head">
         <span className="net-detail-title">
-          {node.t === 1 ? `元素 ${node.name.toLowerCase()}` : "节点"}
+          {node.t === 1 ? t("elements.element", { name: node.name.toLowerCase() }) : t("elements.node")}
         </span>
       </div>
       {isText ? (
-        <pre className="net-pre">{node.value || "(空文本)"}</pre>
+        <pre className="net-pre">{node.value || t("elements.emptyText")}</pre>
       ) : (
         <div className="el-attr-list">
-          <div className="el-kv"><span className="k">标签</span><span className="v">{node.name}</span></div>
-          {attrs.length === 0 ? <div className="hint">无属性</div> : null}
+          <div className="el-kv"><span className="k">{t("elements.tag")}</span><span className="v">{node.name}</span></div>
+          {attrs.length === 0 ? <div className="hint">{t("elements.noAttr")}</div> : null}
           {attrs.map(([k, v]) => (
             <div className="el-kv" key={k}>
               <span className="k">{k}</span>
@@ -121,6 +123,7 @@ function AttrPanel({ node }: { node: DomNode }) {
 }
 
 export default function ElementsPanel({ onHighlight }: Props) {
+  const { t } = useI18n();
   const [root, setRoot] = useState<DomNode | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,14 +149,14 @@ export default function ElementsPanel({ onHighlight }: Props) {
         walk(r.root, 0);
         setExpanded(init);
       } else {
-        setError(r.error ?? "获取 DOM 失败");
+        setError(r.error ?? t("elements.loadFailed"));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -213,12 +216,12 @@ export default function ElementsPanel({ onHighlight }: Props) {
     <div className="el-panel">
       <div className="net-toolbar">
         <button className="ghost" onClick={() => void load()} disabled={loading}>
-          {loading ? "加载中..." : "刷新"}
+          {loading ? t("common.loading") : t("common.refresh")}
         </button>
-        <span className="net-count">{root ? `${countNodes(root)} 节点` : ""}</span>
+        <span className="net-count">{root ? t("elements.nodeCount", { count: countNodes(root) }) : ""}</span>
         <span className="net-actions">
           {selected && selected.t === 1 ? (
-            <button className="ghost" onClick={() => onHighlight(null)}>取消高亮</button>
+            <button className="ghost" onClick={() => onHighlight(null)}>{t("elements.unhighlight")}</button>
           ) : null}
         </span>
       </div>
@@ -235,7 +238,7 @@ export default function ElementsPanel({ onHighlight }: Props) {
               onSelect={(n) => void handleSelect(n)}
             />
           ) : (
-            <div className="hint">加载 DOM...</div>
+            <div className="hint">{t("elements.loadingDom")}</div>
           )}
         </div>
         {selected ? <AttrPanel node={selected} /> : null}

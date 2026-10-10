@@ -17,6 +17,7 @@ import { useStatus } from "./hooks/useStatus";
 import { useVersions } from "./hooks/useVersions";
 import { runCodeStream, organizeImports, setEditorCode, runLoginAnswer, runLoginAction, type RunOutputLine, type SavedItem, type RunLoginRequestData } from "./utils/api";
 import { createTermState, flushTerm, pushTerm, termView, type TermState } from "./utils/ansiTerm";
+import { useI18n } from "./i18n";
 
 const OUTPUT_DEFAULT_HEIGHT = 300;
 const ACTIVITY_BAR_WIDTH = 48;
@@ -35,6 +36,7 @@ const RUN_LOGIN_TOP_RATIO = 0.12;
 const DEFAULT_CODE = "";
 
 export default function App() {
+  const { t } = useI18n();
   const [code, setCode] = useState(DEFAULT_CODE);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState<RunOutputLine[]>([]);
@@ -113,7 +115,7 @@ export default function App() {
           setError(r.error);
         }
       })
-      .catch((e) => setError(`整理导入失败: ${e instanceof Error ? e.message : e}`))
+      .catch((e) => setError(t("app.organizeFailed", { error: e instanceof Error ? e.message : String(e) })))
       .finally(() => setRunning(false));
   };
 
@@ -202,7 +204,7 @@ export default function App() {
         } else if (chunk.type === "run_login_timeout") {
           setRunLogin(null);
           setLiveMaximized(false);
-          setError("二维码登录超时, 已停止等待");
+          setError(t("app.qrLoginTimeout"));
         } else if (chunk.type === "done") {
           flushPending(chunk.ts);
           addMarker({
@@ -220,7 +222,7 @@ export default function App() {
       flushPending(Date.now());
       addMarker({ marker: "end", ts: Date.now(), ok: false });
       const aborted = e instanceof DOMException && e.name === "AbortError";
-      setError(aborted ? "执行已停止" : `请求失败: ${e instanceof Error ? e.message : e}`);
+      setError(aborted ? t("app.runStopped") : t("app.requestFailed", { error: e instanceof Error ? e.message : String(e) }));
     } finally {
       setRunning(false);
       setRunId(null);
@@ -238,7 +240,7 @@ export default function App() {
       setRunLogin(null);
       if (runLogin?.zoom_browser) setLiveMaximized(false);
     } catch (e) {
-      setError(`提交登录失败: ${e instanceof Error ? e.message : e}`);
+      setError(t("app.loginSubmitFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -250,7 +252,7 @@ export default function App() {
         setError(r.message);
       }
     } catch (e) {
-      setError(`登录动作失败: ${e instanceof Error ? e.message : e}`);
+      setError(t("app.loginActionFailed", { error: e instanceof Error ? e.message : String(e) }));
     }
   };
 
@@ -418,8 +420,8 @@ export default function App() {
       <footer className="statusbar">
         <span className={status?.xvfb ? "ok" : "bad"}>Xvfb ●</span>
         <span className={status?.chrome ? "ok" : "bad"}>Chrome ●</span>
-        <span>抓屏 {status?.capture?.fps ?? "-"} fps</span>
-        <span style={{ marginLeft: "auto" }}>末帧延迟 {status?.capture?.last_frame_age_ms != null ? `${status.capture.last_frame_age_ms} ms` : "-"}</span>
+        <span>{t("app.captureFps", { fps: status?.capture?.fps ?? "-" })}</span>
+        <span style={{ marginLeft: "auto" }}>{t("app.lastFrameDelay", { ms: status?.capture?.last_frame_age_ms != null ? `${status.capture.last_frame_age_ms} ms` : "-" })}</span>
       </footer>
       <LiveView
         imgRef={imgRef}
@@ -452,16 +454,16 @@ export default function App() {
       {conflict ? (
         <div className="conflict-backdrop">
           <div className="conflict-card">
-            <div className="conflict-title">已有连接</div>
-            <div className="conflict-body">本平台仅支持一个窗口连接，检测到已有其他窗口正在使用。是否由本窗口接管连接，并结束原窗口的连接？</div>
+            <div className="conflict-title">{t("app.conflictTitle")}</div>
+            <div className="conflict-body">{t("app.conflictBody")}</div>
             <div className="conflict-actions">
-              <button className="primary" onClick={() => resolveConflict("kick")}>接管连接</button>
-              <button onClick={() => resolveConflict("cancel")}>取消</button>
+              <button className="primary" onClick={() => resolveConflict("kick")}>{t("app.conflictTakeover")}</button>
+              <button onClick={() => resolveConflict("cancel")}>{t("common.cancel")}</button>
             </div>
           </div>
         </div>
       ) : null}
-      {kicked ? <div className="kicked-banner">连接已由其他窗口接管，本窗口已断开。刷新页面可重新连接。</div> : null}
+      {kicked ? <div className="kicked-banner">{t("app.kickedBanner")}</div> : null}
       {exportOpen ? (
         <ExportDialog code={code} onClose={() => setExportOpen(false)} onError={setError} />
       ) : null}
@@ -485,6 +487,7 @@ function RunLoginModal({
   onRefreshCaptcha: () => void;
   onRefreshQr: () => void;
 }) {
+  const { t } = useI18n();
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [countdown, setCountdown] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -541,10 +544,10 @@ function RunLoginModal({
       <button
         className="run-login-collapsed"
         style={{ left: pos.x, top: pos.y }}
-        title="展开登录面板"
+        title={t("login.expand")}
         onClick={() => setCollapsed(false)}
       >
-        🔐 登录中 · 点击展开
+        {t("login.loggingInCollapsed")}
       </button>
     );
   }
@@ -552,10 +555,10 @@ function RunLoginModal({
   return (
     <div className="run-login-card" style={{ left: pos.x, top: pos.y }}>
       <div className="run-login-title" onMouseDown={beginDrag}>
-        <span>🔐 {isQr ? "二维码登录" : "账号登录"}</span>
+        <span>🔐 {isQr ? t("login.qrTitle") : t("login.accountTitle")}</span>
         <button
           className="run-login-collapse"
-          title="收起为浮动按钮(避免遮挡放大画面)"
+          title={t("login.collapseHint")}
           onClick={() => setCollapsed(true)}
         >
           <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
@@ -566,9 +569,9 @@ function RunLoginModal({
       {isQr ? (
         <>
           <div className="run-login-hint">
-            {login.message ?? "请在放大后的浏览器实时画面中用手机 APP 扫码登录。"}
+            {login.message ?? t("login.qrHint")}
           </div>
-          <div className="run-login-hint sub">系统已放大浏览器实时画面并持续监听登录跳转，扫码成功后脚本会自动继续。</div>
+          <div className="run-login-hint sub">{t("login.qrSub")}</div>
         </>
       ) : (
         <>
@@ -578,38 +581,38 @@ function RunLoginModal({
               <input
                 type={f.input_type === "password" ? "password" : "text"}
                 value={(values[f.key] as string) ?? ""}
-                placeholder={f.placeholder || `请输入${f.label}`}
+                placeholder={f.placeholder || t("login.enterField", { label: f.label })}
                 onChange={(e) => setVal(f.key, e.target.value)}
               />
             </div>
           ))}
           {login.captcha && login.captcha.type !== "none" ? (
             <div className="run-login-field">
-              <div className="run-login-label">验证码</div>
+              <div className="run-login-label">{t("login.captcha")}</div>
               <div className="run-login-captcha-row">
                 <input
                   type="text"
                   value={(values.captcha as string) ?? ""}
-                  placeholder="请输入验证码"
+                  placeholder={t("login.enterCaptcha")}
                   onChange={(e) => setVal("captcha", e.target.value)}
                 />
                 {login.captcha.type === "image" && login.captcha.image ? (
                   <img
                     className="run-login-captcha-img"
                     src={login.captcha.image}
-                    alt="验证码"
-                    title="点击刷新"
+                    alt={t("login.captcha")}
+                    title={t("login.clickRefresh")}
                     onClick={onRefreshCaptcha}
                   />
                 ) : null}
               </div>
               {login.captcha.type === "sms" ? (
                 <button className="run-login-send-code" disabled={countdown > 0} onClick={() => { setCountdown(60); onSendCode(); }}>
-                  {countdown > 0 ? `${countdown}s 后重发` : "发送验证码"}
+                  {countdown > 0 ? t("login.resend", { count: countdown }) : t("login.sendCode")}
                 </button>
               ) : null}
               {login.captcha.type === "image" ? (
-                <button className="run-login-send-code" onClick={onRefreshCaptcha}>换一张</button>
+                <button className="run-login-send-code" onClick={onRefreshCaptcha}>{t("login.changeImage")}</button>
               ) : null}
             </div>
           ) : null}
@@ -618,15 +621,15 @@ function RunLoginModal({
       <div className="run-login-actions">
         {isQr ? (
           <button className="primary" disabled={busy} onClick={() => submit({ ok: true })}>
-            我已经完成扫码，继续
+            {t("login.qrDone")}
           </button>
         ) : (
           <button className="primary" disabled={busy} onClick={() => submit(values)}>
-            {login.submit_label ? `提交${login.submit_label}` : "提交登录"}
+            {login.submit_label ? t("login.submitLabel", { label: login.submit_label }) : t("login.submit")}
           </button>
         )}
-        {isQr ? <button onClick={onRefreshQr}>刷新二维码</button> : null}
-        <button onClick={onCancel}>取消登录</button>
+        {isQr ? <button onClick={onRefreshQr}>{t("login.refreshQr")}</button> : null}
+        <button onClick={onCancel}>{t("login.cancel")}</button>
       </div>
     </div>
   );

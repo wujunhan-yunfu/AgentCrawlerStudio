@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../utils/api";
+import { t } from "../i18n";
 
 export interface RemoteControlState {
   send: (msg: Record<string, unknown>) => void;
@@ -58,7 +59,7 @@ export function useRemoteControl(): RemoteControlState {
             setEnabled(false);
             setError(null);
           } else if (m.type === "error") {
-            setError((m as { message?: string }).message ?? "操作失败");
+            setError((m as { message?: string }).message ?? t("common.opFailed"));
           }
         } catch {
           /* ignore */

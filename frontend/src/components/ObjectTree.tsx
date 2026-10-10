@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ConsoleItem } from "../hooks/useConsole";
 import { api } from "../utils/api";
+import { useI18n } from "../i18n";
 
 interface PropEntry {
   name: string;
@@ -54,6 +55,7 @@ function Preview({ prev }: { prev: { n: string; v: string; t?: string }[] }) {
 }
 
 export default function ObjectTree({ item }: { item: ConsoleItem }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export default function ObjectTree({ item }: { item: ConsoleItem }) {
         });
         const j = (await r.json()) as { ok: boolean; props?: PropEntry[]; error?: string };
         if (j.ok) setChildren(j.props ?? []);
-        else setError(j.error ?? "展开失败");
+        else setError(j.error ?? t("objTree.expandFailed"));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -114,11 +116,11 @@ export default function ObjectTree({ item }: { item: ConsoleItem }) {
         <span className="objv-name">{item.v ?? ""}</span>
         {!expanded && item.prev && item.prev.length > 0 ? <Preview prev={item.prev} /> : null}
       </span>
-      {loading ? <span className="objv-loading"> 加载中...</span> : null}
+      {loading ? <span className="objv-loading"> {t("common.loading")}</span> : null}
       {error ? <span className="objv-error"> ({error})</span> : null}
       {expanded && children !== null ? (
         <span className="objv-children">
-          {children.length === 0 ? <span className="objv-empty"> (无属性)</span> : null}
+          {children.length === 0 ? <span className="objv-empty"> ({t("objTree.noProps")})</span> : null}
           {children.map((p, i) => (
             <span key={i} className="objv-row">
               <span className="objv-key">{p.name}</span>

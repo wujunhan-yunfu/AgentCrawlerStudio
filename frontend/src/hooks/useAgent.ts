@@ -26,6 +26,7 @@ import {
   agentWsUrl,
 } from "../utils/api";
 import { normalizeTerm } from "../utils/ansiTerm";
+import { t } from "../i18n";
 
 interface AgentEvent {
   type: string;
@@ -214,7 +215,7 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
       feed.push({
         kind: "saved",
         saved: items,
-        content: m.content || `已保存 ${items.length} 项内容`,
+        content: m.content || t("agent.savedCount", { count: items.length }),
       });
     } else if (m.type === "tool") {
       const name = (meta.name as string) ?? "";
@@ -254,9 +255,9 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
         feed.push({ kind: "diff", diff: { from, to } });
       }
     } else if (m.type === "login_request") {
-      feed.push({ kind: "status", content: "需要用户完成登录（请扫码或填写登录信息）" });
+      feed.push({ kind: "status", content: t("agent.statusNeedLogin") });
     } else if (m.type === "login_success") {
-      feed.push({ kind: "status", content: m.content || "登录成功" });
+      feed.push({ kind: "status", content: m.content || t("agent.statusLoginSuccess") });
     } else if (m.type === "login_action") {
       if (m.content) feed.push({ kind: "status", content: m.content });
     }
@@ -634,7 +635,7 @@ export function useAgent(): AgentState {
         updateSessionInfo(sid, {
           id: sid,
           crawler_id: msg.crawler_id ?? crawlerIdRef.current ?? prev?.crawler_id ?? "",
-          title: prev?.title ?? msg.title ?? "新会话",
+          title: prev?.title ?? msg.title ?? t("agent.newChat"),
           status: prev?.status ?? "idle",
           created_at: prev?.created_at ?? ts,
           updated_at: ts,
@@ -734,7 +735,7 @@ export function useAgent(): AgentState {
         pushToFeed(sid, {
           kind: "saved",
           saved: items,
-          content: `已保存 ${items.length} 项内容`,
+          content: t("agent.savedCount", { count: items.length }),
         });
         break;
       }
@@ -792,14 +793,16 @@ export function useAgent(): AgentState {
           setLogin(null);
           window.dispatchEvent(new Event("agent:login-unzoom"));
         }
-        const url = msg.url ? `，已跳转到 ${msg.url}` : "";
-        pushToFeed(sid, { kind: "status", content: `登录成功${url}` });
+        const content = msg.url
+          ? t("agent.loginSuccessWithUrl", { url: msg.url })
+          : t("agent.statusLoginSuccess");
+        pushToFeed(sid, { kind: "status", content });
         setSessionStatus(sid, "running");
         break;
       }
       case "login_action": {
         if (!sid) break;
-        const text = msg.message ?? (msg.ok ? "操作成功" : "操作失败");
+        const text = msg.message ?? (msg.ok ? t("common.opSuccess") : t("common.opFailed"));
         pushToFeed(sid, { kind: "status", content: text });
         break;
       }
@@ -841,7 +844,7 @@ export function useAgent(): AgentState {
         if (!sid) break;
         flushStreaming(sid);
         finalizePlan(sid);
-        pushToFeed(sid, { kind: "error", content: msg.error ?? "未知错误" });
+        pushToFeed(sid, { kind: "error", content: msg.error ?? t("common.unknownError") });
         setSessionStatus(sid, "error");
         finalizeWithBackend(sid, "error");
         break;
@@ -945,7 +948,7 @@ export function useAgent(): AgentState {
   const createSession = useCallback(async () => {
     try {
       const r = await agentCreateSession(
-        `新会话 · ${new Date().toLocaleTimeString()}`,
+        t("agent.newSessionTitleWithTime", { time: new Date().toLocaleTimeString() }),
         crawlerIdRef.current ?? undefined,
       );
       const ts = Date.now();
@@ -967,7 +970,7 @@ export function useAgent(): AgentState {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (activeRef.current) {
-        pushToFeed(activeRef.current, { kind: "error", content: `新建会话失败: ${msg}` });
+        pushToFeed(activeRef.current, { kind: "error", content: t("agent.createSessionFailed", { error: msg }) });
       }
     }
   }, [pushToFeed, selectSession, syncSessions]);
@@ -981,7 +984,7 @@ export function useAgent(): AgentState {
       await agentSendMessage(sid, content, crawlerIdRef.current ?? undefined);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      pushToFeed(sid, { kind: "error", content: `发送失败: ${msg}` });
+      pushToFeed(sid, { kind: "error", content: t("agent.sendFailed", { error: msg }) });
     }
   }, [pushToFeed]);
 
@@ -994,7 +997,7 @@ export function useAgent(): AgentState {
     } catch (e) {
       pushToFeed(sid, {
         kind: "error",
-        content: `提交答案失败: ${e instanceof Error ? e.message : String(e)}`,
+        content: t("agent.submitAnswerFailed", { error: e instanceof Error ? e.message : String(e) }),
       });
     }
   }, [pushToFeed]);
@@ -1008,7 +1011,7 @@ export function useAgent(): AgentState {
     } catch (e) {
       pushToFeed(sid, {
         kind: "error",
-        content: `提交登录失败: ${e instanceof Error ? e.message : String(e)}`,
+        content: t("agent.submitLoginFailed", { error: e instanceof Error ? e.message : String(e) }),
       });
     }
   }, [pushToFeed]);
@@ -1021,7 +1024,7 @@ export function useAgent(): AgentState {
     } catch (e) {
       pushToFeed(sid, {
         kind: "error",
-        content: `发送验证码失败: ${e instanceof Error ? e.message : String(e)}`,
+        content: t("agent.sendCodeFailed", { error: e instanceof Error ? e.message : String(e) }),
       });
     }
   }, [pushToFeed]);
@@ -1042,7 +1045,7 @@ export function useAgent(): AgentState {
     } catch (e) {
       pushToFeed(sid, {
         kind: "error",
-        content: `刷新验证码失败: ${e instanceof Error ? e.message : String(e)}`,
+        content: t("agent.refreshCaptchaFailed", { error: e instanceof Error ? e.message : String(e) }),
       });
     }
   }, [pushToFeed]);
@@ -1055,7 +1058,7 @@ export function useAgent(): AgentState {
     } catch (e) {
       pushToFeed(sid, {
         kind: "error",
-        content: `刷新二维码失败: ${e instanceof Error ? e.message : String(e)}`,
+        content: t("agent.refreshQrFailed", { error: e instanceof Error ? e.message : String(e) }),
       });
     }
   }, [pushToFeed]);
@@ -1069,7 +1072,7 @@ export function useAgent(): AgentState {
       setLogin(null);
       window.dispatchEvent(new Event("agent:login-unzoom"));
     }
-    pushToFeed(sid, { kind: "status", content: "用户取消登录，本次任务已终止" });
+    pushToFeed(sid, { kind: "status", content: t("agent.cancelLogin") });
     setSessionStatus(sid, "cancelled");
     try {
       await agentStop(sid, crawlerIdRef.current ?? undefined);
@@ -1100,7 +1103,7 @@ export function useAgent(): AgentState {
     try {
       await agentDeleteSession(id, crawlerIdRef.current ?? undefined);
     } catch (e) {
-      pushToFeed(id, { kind: "error", content: `删除会话失败: ${e instanceof Error ? e.message : String(e)}` });
+      pushToFeed(id, { kind: "error", content: t("agent.deleteSessionFailed", { error: e instanceof Error ? e.message : String(e) }) });
     }
   }, [pushToFeed, removeSessionLocal]);
 
@@ -1109,7 +1112,7 @@ export function useAgent(): AgentState {
       const r = await agentRenameSession(id, title, crawlerIdRef.current ?? undefined);
       updateSessionInfo(id, { title: r.title });
     } catch (e) {
-      pushToFeed(id, { kind: "error", content: `修改标题失败: ${e instanceof Error ? e.message : String(e)}` });
+      pushToFeed(id, { kind: "error", content: t("agent.renameFailed", { error: e instanceof Error ? e.message : String(e) }) });
     }
   }, [pushToFeed, updateSessionInfo]);
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { exportScript, validateCron } from "../utils/api";
+import { useI18n } from "../i18n";
 
 interface Props {
   code: string;
@@ -14,6 +15,7 @@ function fmtTime(ms: number): string {
 }
 
 export default function ExportDialog({ code, onClose, onError }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState("crawler");
   const [cron, setCron] = useState("");
   const [headless, setHeadless] = useState(false);
@@ -27,7 +29,7 @@ export default function ExportDialog({ code, onClose, onError }: Props) {
   const doValidate = async () => {
     const expr = cron.trim();
     if (!expr) {
-      setCheckResult({ ok: false, error: "请先输入 cron 表达式", next: [] });
+      setCheckResult({ ok: false, error: t("export.needCron"), next: [] });
       return;
     }
     setChecking(true);
@@ -77,13 +79,13 @@ export default function ExportDialog({ code, onClose, onError }: Props) {
   return (
     <div className="export-backdrop" onClick={onClose}>
       <div className="export-card" onClick={(e) => e.stopPropagation()}>
-        <div className="export-title">导出脚本</div>
+        <div className="export-title">{t("export.title")}</div>
         <div className="export-desc">
-          将当前编辑器中的代码导出为可直接用 uv 运行的独立包, 内含 pyproject.toml、README 与运行入口。
+          {t("export.desc")}
         </div>
 
         <div className="export-field">
-          <div className="export-label">包名</div>
+          <div className="export-label">{t("export.packageName")}</div>
           <input
             className="export-input"
             value={name}
@@ -94,30 +96,30 @@ export default function ExportDialog({ code, onClose, onError }: Props) {
         </div>
 
         <div className="export-field">
-          <div className="export-label">定时运行 cron(可选)</div>
+          <div className="export-label">{t("export.cronLabel")}</div>
           <div className="export-cron-row">
             <input
               className="export-input"
               value={cron}
-              placeholder="留空则不设默认, 定时运行须用 --cron 提供, 如 */5 * * * *"
+              placeholder={t("export.cronPlaceholder")}
               onChange={(e) => {
                 setCron(e.target.value);
                 setCheckResult(null);
               }}
             />
             <button onClick={() => void doValidate()} disabled={checking || busy}>
-              {checking ? "校验中..." : "校验"}
+              {checking ? t("export.checking") : t("export.validate")}
             </button>
           </div>
-          <div className="export-hint">分 时 日 月 周; 支持 * , - / 与 JAN-DEC / SUN-SAT 及 @daily 等宏</div>
+          <div className="export-hint">{t("export.cronHint")}</div>
           {checkResult ? (
             checkResult.ok ? (
               <div className="export-ok">
-                表达式有效
-                {checkResult.next.length ? `, 接下来运行: ${checkResult.next.map(fmtTime).join(", ")}` : ""}
+                {t("export.valid")}
+                {checkResult.next.length ? t("export.nextRuns", { runs: checkResult.next.map(fmtTime).join(", ") }) : ""}
               </div>
             ) : (
-              <div className="export-err">表达式无效: {checkResult.error}</div>
+              <div className="export-err">{t("export.invalid", { error: checkResult.error })}</div>
             )
           ) : null}
         </div>
@@ -129,22 +131,21 @@ export default function ExportDialog({ code, onClose, onError }: Props) {
               checked={headless}
               onChange={(e) => setHeadless(e.target.checked)}
             />
-            <span>默认无头模式运行(headless)</span>
+            <span>{t("export.headless")}</span>
           </label>
           <div className="export-hint">
-            勾选则脚本默认无头运行; 取消则默认有头(可见浏览器窗口, 便于人工扫码/登录)。
-            运行时可用 --headless / --no-headless 覆盖。
+            {t("export.headlessHint")}
           </div>
         </div>
 
-        {exportError ? <div className="export-err">导出失败: {exportError}</div> : null}
+        {exportError ? <div className="export-err">{t("export.failed", { error: exportError })}</div> : null}
 
         <div className="export-actions">
           <button className="primary" disabled={busy || !code.trim()} onClick={() => void doExport()}>
-            {busy ? "导出中..." : "导出 ZIP"}
+            {busy ? t("export.exporting") : t("export.exportZip")}
           </button>
           <button onClick={onClose} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </button>
         </div>
       </div>

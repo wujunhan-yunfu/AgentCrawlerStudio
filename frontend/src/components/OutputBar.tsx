@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
+import { useI18n, type MessageKey } from "../i18n";
 import type { ConsoleMessage } from "../hooks/useConsole";
 import type { Problem } from "../hooks/useProblems";
 import type { HighlightBox } from "./ElementsPanel";
@@ -35,12 +36,12 @@ interface Props {
 const MIN_HEIGHT = 80;
 const STATUSBAR_HEIGHT = 24;
 
-const SEVERITY_LABEL = {
-  [monaco.MarkerSeverity.Error]: "错误",
-  [monaco.MarkerSeverity.Warning]: "警告",
-  [monaco.MarkerSeverity.Info]: "信息",
-  [monaco.MarkerSeverity.Hint]: "提示",
-} as const;
+const SEVERITY_LABEL: Record<number, MessageKey> = {
+  [monaco.MarkerSeverity.Error]: "output.sevError",
+  [monaco.MarkerSeverity.Warning]: "output.sevWarning",
+  [monaco.MarkerSeverity.Info]: "output.sevInfo",
+  [monaco.MarkerSeverity.Hint]: "output.sevHint",
+};
 
 export default function OutputBar({
   height,
@@ -64,6 +65,7 @@ export default function OutputBar({
   onEvaluate,
   onHighlight,
 }: Props) {
+  const { t } = useI18n();
   const dragging = useRef(false);
   const outputRef = useRef<HTMLDivElement | null>(null);
   const [tab, setTab] = useState<"output" | "problems" | "devtools">("output");
@@ -122,13 +124,15 @@ export default function OutputBar({
     return `${m}m${Math.round(s % 60)}s`;
   };
 
-  const DEV_ITEMS: { key: typeof devSub; label: string }[] = [
-    { key: "console", label: "控制台" },
+  const DEV_ITEMS: { key: typeof devSub; labelKey?: MessageKey; label?: string }[] = [
+    { key: "console", labelKey: "dev.console" },
     { key: "elements", label: "Elements" },
     { key: "network", label: "Network" },
     { key: "application", label: "Application" },
   ];
-  const devLabel = DEV_ITEMS.find((i) => i.key === devSub)?.label ?? "控制台";
+  const devItemLabel = (it: (typeof DEV_ITEMS)[number]): string =>
+    it.labelKey ? t(it.labelKey) : it.label ?? t("dev.console");
+  const devLabel = devItemLabel(DEV_ITEMS.find((i) => i.key === devSub) ?? DEV_ITEMS[0]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -171,20 +175,20 @@ export default function OutputBar({
 
   return (
     <section className="output-bar" style={{ height }}>
-      <div className="resize-handle" title="拖拽调整高度" onMouseDown={handleMouseDown} />
-      <div className="output-corner-handle" title="拖拽同时调整侧栏宽度与输出栏高度" onMouseDown={onCornerResizeStart} />
+      <div className="resize-handle" title={t("output.resizeHeight")} onMouseDown={handleMouseDown} />
+      <div className="output-corner-handle" title={t("output.resizeCorner")} onMouseDown={onCornerResizeStart} />
       <div className="output-bar-tabs">
         <button
           className={`tab ${tab === "output" ? "active" : ""}`}
           onClick={() => setTab("output")}
         >
-          输出
+          {t("output.tabOutput")}
         </button>
         <button
           className={`tab ${tab === "problems" ? "active" : ""}`}
           onClick={() => setTab("problems")}
         >
-          问题
+          {t("output.tabProblems")}
           {problems.length > 0 ? (
             <span className="problem-count">
               <span className="badge error">{errorCount}</span>
@@ -199,9 +203,9 @@ export default function OutputBar({
               setTab("devtools");
               setMenuOpen((o) => !o);
             }}
-            title="浏览器控制台 (Elements / Console / Network / Application)"
+            title={t("output.devtoolsTitle")}
           >
-            浏览器控制台: {devLabel} <span className="dev-caret">▾</span>
+            {t("output.browserConsole", { label: devLabel })} <span className="dev-caret">▾</span>
             <span className="problem-count">
               <span className="badge error">{consoleErrorCount}</span>
               <span className="badge warning">{consoleWarnCount}</span>
@@ -221,7 +225,7 @@ export default function OutputBar({
                       setMenuOpen(false);
                     }}
                   >
-                    {it.label}
+                    {devItemLabel(it)}
                     {it.key === "console" ? (
                       <span className="problem-count">
                         <span className="badge error">{consoleErrorCount}</span>
@@ -236,33 +240,33 @@ export default function OutputBar({
         </div>
         <div className="output-bar-actions">
           {tab === "devtools" && devSub === "console" ? (
-            <button onClick={onClearConsole} title="清空控制台">清空控制台</button>
+            <button onClick={onClearConsole} title={t("output.clearConsole")}>{t("output.clearConsole")}</button>
           ) : null}
           <button onClick={onFormat} title="Shift+Alt+F">
-            格式化代码
+            {t("output.format")}
           </button>
           {onOrganizeImports ? (
             <button onClick={onOrganizeImports} title="Shift+Alt+O">
-              整理导入
+              {t("output.organizeImports")}
             </button>
           ) : null}
           {onExport ? (
-            <button onClick={onExport} title="导出为可独立运行的 uv 工程包">
-              导出脚本
+            <button onClick={onExport} title={t("output.exportTitle")}>
+              {t("output.export")}
             </button>
           ) : null}
           <button
             className={`primary ${running ? "run-stop" : ""}`}
             onClick={running ? onStop : onRun}
-            title={running ? "停止执行" : undefined}
+            title={running ? t("output.stopRun") : undefined}
           >
             {running ? (
               <>
-                <span className="run-stop-idle">执行中...</span>
-                <span className="run-stop-hover">停止执行</span>
+                <span className="run-stop-idle">{t("output.running")}</span>
+                <span className="run-stop-hover">{t("output.stopRun")}</span>
               </>
             ) : (
-              "执行代码"
+              t("output.run")
             )}
           </button>
         </div>
@@ -281,10 +285,10 @@ export default function OutputBar({
                       <span className="run-marker-line" />
                       <span className="run-marker-badge">
                         {line.marker === "start"
-                          ? "▶ 执行开始"
+                          ? t("output.runStart")
                           : line.ok === false
-                            ? "✗ 执行结束"
-                            : "✓ 执行结束"}
+                            ? t("output.runEndFail")
+                            : t("output.runEndOk")}
                       </span>
                       {typeof line.dur === "number" && line.dur > 0 ? (
                         <span className="run-marker-dur">{formatDur(line.dur)}</span>
@@ -312,12 +316,12 @@ export default function OutputBar({
             ) : null}
             {error ? <pre className="err">{error}</pre> : null}
             {output.length === 0 && !pending && !error ? (
-              <span className="hint">每次执行会自动重启全新无痕浏览器, 并提供 page / context / browser 对象。</span>
+              <span className="hint">{t("output.emptyHint")}</span>
             ) : null}
           </div>
           {saved.length > 0 ? (
             <div className="saved-list">
-              <div className="saved-head">已保存内容 ({saved.length})</div>
+              <div className="saved-head">{t("output.savedHeader", { count: saved.length })}</div>
               {saved.map((item) => {
                 const open = expandedSaved.has(item.id);
                 return (
@@ -333,9 +337,9 @@ export default function OutputBar({
                           toggleSaved(item.id);
                         }
                       }}
-                      title="点击查看详情"
+                      title={t("output.savedDetailTitle")}
                     >
-                      <span className={`saved-kind ${item.kind}`}>{item.kind === "page" ? "页面" : item.kind === "img" ? "图片" : "内容"}</span>
+                      <span className={`saved-kind ${item.kind}`}>{item.kind === "page" ? t("output.kindPage") : item.kind === "img" ? t("output.kindImg") : t("output.kindContent")}</span>
                       <span className="saved-name">{item.name}</span>
                       <span className="saved-size">{formatSize(item.size)}</span>
                       <button
@@ -344,15 +348,15 @@ export default function OutputBar({
                           e.stopPropagation();
                           downloadSaved(item);
                         }}
-                        title="下载该文件"
+                        title={t("output.downloadTitle")}
                       >
-                        下载
+                        {t("output.download")}
                       </button>
                       <span className="saved-caret">{open ? "▾" : "▸"}</span>
                     </div>
                     {open ? (
                       <div className="saved-detail">
-                        <div className="saved-meta">路径: {item.path}</div>
+                        <div className="saved-meta">{t("output.path", { path: item.path })}</div>
                         <pre>{item.content}</pre>
                       </div>
                     ) : null}
@@ -382,7 +386,7 @@ export default function OutputBar({
         <div className={tab === "problems" ? "panel-active" : "panel-hidden"}>
           <div className="problems">
             {problems.length === 0 ? (
-              <span className="hint">没有检测到问题。</span>
+              <span className="hint">{t("output.noProblems")}</span>
             ) : (
               <ul>
                 {problems.map((p, i) => (
@@ -390,9 +394,9 @@ export default function OutputBar({
                     key={i}
                     className={`problem sev-${p.severity}`}
                     onClick={() => onJumpToProblem(p.startLineNumber, p.startColumn)}
-                    title="点击跳转到代码位置"
+                    title={t("output.jumpProblem")}
                   >
-                    <span className="sev">{SEVERITY_LABEL[p.severity]}</span>
+                    <span className="sev">{t(SEVERITY_LABEL[p.severity])}</span>
                     <span className="msg">{p.message}</span>
                     <span className="pos">
                       [{p.startLineNumber}, {p.startColumn}]

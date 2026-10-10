@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PanelKey } from "../types";
 import { useTheme, type ThemeMode } from "../theme";
+import { useI18n, type Lang, type MessageKey } from "../i18n";
 
 interface Item {
   key: PanelKey;
-  title: string;
+  titleKey: MessageKey;
   icon: ReactNode;
 }
 
@@ -68,37 +69,37 @@ function spider() {
 const ITEMS: Item[] = [
   {
     key: "code",
-    title: "代码",
+    titleKey: "activity.code",
     icon: icon("M4.7 4.3L1.5 8l3.2 3.7.8-.7L3 8l2.5-3-.8-.7zm6.6 0l-.8.7L13 8l-2.5 3 .8.7 3.2-3.7-.8-.7-.8.7-.7-.7zM9 3.5l-2 9h1.2l2-9H9z"),
   },
   {
     key: "browser",
-    title: "浏览器控制",
+    titleKey: "activity.browser",
     icon: icon("M2 2h12v12H2V2zm1 1v5h10V3H3zm0 6v3h10V9H3z"),
   },
   {
     key: "status",
-    title: "状态",
+    titleKey: "activity.status",
     icon: icon("M15.5 8.5H13L11 5.2 8.3 10l-2-3.4L4.5 8.5H1.5v1h4l1-1.4 1.7 3 2.8-4.8 1.5 2.7h2.5v-.5z"),
   },
   {
     key: "pages",
-    title: "打开页面",
+    titleKey: "activity.pages",
     icon: icon("M1 3h14v10H1V3zm1 1v8h12V4H2z"),
   },
   {
     key: "tools",
-    title: "工具",
+    titleKey: "activity.tools",
     icon: icon("M9.4 1.6h-2l-.3 1.6c-.4.1-.8.4-1.1.7l-1.5-.6-1 1 .6 1.5c-.3.3-.6.7-.7 1.1l-1.6.3v2l1.6.3c.1.4.4.8.7 1.1l-.6 1.5 1 1 1.5-.6c.3.3.7.6 1.1.7l.3 1.6h2l.3-1.6c.4-.1.8-.4 1.1-.7l1.5.6 1-1-.6-1.5c.3-.3.6-.7.7-1.1l1.6-.3v-2l-1.6-.3c-.1-.4-.4-.8-.7-1.1l.6-1.5-1-1-1.5.6c-.3-.3-.7-.6-1.1-.7L9.4 1.6zM8.4 10.7A2.3 2.3 0 1 1 8.4 6a2.3 2.3 0 0 1 0 4.7z"),
   },
   {
     key: "agent",
-    title: "爬虫 Agent",
+    titleKey: "activity.agent",
     icon: spider(),
   },
   {
     key: "versions",
-    title: "源码管理",
+    titleKey: "activity.versions",
     icon: branch(),
   },
 ];
@@ -108,10 +109,15 @@ interface Props {
   onSelect: (key: PanelKey) => void;
 }
 
-const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
-  { mode: "system", label: "AUTO" },
-  { mode: "light", label: "浅色" },
-  { mode: "dark", label: "深色" },
+const THEME_OPTIONS: { mode: ThemeMode; labelKey: MessageKey }[] = [
+  { mode: "system", labelKey: "theme.system" },
+  { mode: "light", labelKey: "theme.light" },
+  { mode: "dark", labelKey: "theme.dark" },
+];
+
+const LANG_OPTIONS: { lang: Lang; labelKey: MessageKey }[] = [
+  { lang: "zh", labelKey: "lang.zh" },
+  { lang: "en", labelKey: "lang.en" },
 ];
 
 function gear() {
@@ -132,6 +138,7 @@ function check() {
 
 export default function ActivityBar({ active, onSelect }: Props) {
   const { mode, setMode } = useTheme();
+  const { lang, setLang, t } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement | null>(null);
 
@@ -150,7 +157,7 @@ export default function ActivityBar({ active, onSelect }: Props) {
         <button
           key={item.key}
           className={active === item.key ? "active" : ""}
-          title={item.title}
+          title={t(item.titleKey)}
           onClick={() => onSelect(item.key)}
         >
           {item.icon}
@@ -159,14 +166,14 @@ export default function ActivityBar({ active, onSelect }: Props) {
       <div className="activitybar-settings" ref={settingsRef}>
         <button
           className={`activitybar-gear${menuOpen ? " active" : ""}`}
-          title="管理 / 颜色主题"
+          title={t("activity.settings")}
           onClick={() => setMenuOpen((o) => !o)}
         >
           {gear()}
         </button>
         {menuOpen ? (
           <div className="theme-menu" role="menu">
-            <div className="theme-menu-title">颜色主题</div>
+            <div className="theme-menu-title">{t("activity.colorTheme")}</div>
             {THEME_OPTIONS.map((opt) => (
               <button
                 key={opt.mode}
@@ -179,7 +186,24 @@ export default function ActivityBar({ active, onSelect }: Props) {
                 }}
               >
                 <span className="theme-menu-check">{mode === opt.mode ? check() : null}</span>
-                <span className="theme-menu-label">{opt.label}</span>
+                <span className="theme-menu-label">{t(opt.labelKey)}</span>
+              </button>
+            ))}
+            <div className="theme-menu-sep" />
+            <div className="theme-menu-title">{t("activity.language")}</div>
+            {LANG_OPTIONS.map((opt) => (
+              <button
+                key={opt.lang}
+                className={`theme-menu-item${lang === opt.lang ? " active" : ""}`}
+                role="menuitemradio"
+                aria-checked={lang === opt.lang}
+                onClick={() => {
+                  setLang(opt.lang);
+                  setMenuOpen(false);
+                }}
+              >
+                <span className="theme-menu-check">{lang === opt.lang ? check() : null}</span>
+                <span className="theme-menu-label">{t(opt.labelKey)}</span>
               </button>
             ))}
           </div>

@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { restart, screenshotBlob } from "../utils/api";
+import { useI18n } from "../i18n";
 
 export default function ScreenshotPanel() {
+  const { t } = useI18n();
   const [shotUrl, setShotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -19,7 +21,7 @@ export default function ScreenshotPanel() {
   };
 
   const doRestart = async () => {
-    if (!window.confirm("确认重启整个推流链路?")) return;
+    if (!window.confirm(t("tools.confirmRestart"))) return;
     try {
       await restart();
     } catch {
@@ -31,13 +33,13 @@ export default function ScreenshotPanel() {
     <div className="screenshot">
       <div className="row">
         <button className="ghost" onClick={() => void take()} disabled={loading}>
-          {loading ? "截图生成中..." : "截图"}
+          {loading ? t("tools.capturing") : t("tools.capture")}
         </button>
         <button className="danger" onClick={() => void doRestart()}>
-          重启推流
+          {t("tools.restart")}
         </button>
       </div>
-      {shotUrl && <img src={shotUrl} alt="截图" />}
+      {shotUrl && <img src={shotUrl} alt={t("tools.screenshot")} />}
     </div>
   );
 }
