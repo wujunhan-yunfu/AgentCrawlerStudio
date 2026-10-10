@@ -1,6 +1,7 @@
 import type { MessageKey } from "./index";
 
 export const en: Record<MessageKey, string> = {
+  "app.title": "AgentCrawlerStudio",
   "common.cancel": "Cancel",
   "common.delete": "Delete",
   "common.add": "Add",

@@ -1,4 +1,5 @@
 export const zh = {
+  "app.title": "爬虫工作台",
   "common.cancel": "取消",
   "common.delete": "删除",
   "common.add": "添加",

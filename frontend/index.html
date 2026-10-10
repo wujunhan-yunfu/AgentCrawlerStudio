@@ -4,9 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
-    <title>AgentCrawlerStudio</title>
+    <title>爬虫工作台</title>
     <script>
       (function () {
+        try {
+          var lang = localStorage.getItem("acs-lang") || "zh";
+          document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+          document.title = lang === "en" ? "AgentCrawlerStudio" : "爬虫工作台";
+        } catch (e) {}
         try {
           var m = localStorage.getItem("acs-color-theme") || "system";
           var d =
