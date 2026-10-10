@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { PanelKey } from "../types";
+import { useTheme, type ThemeMode } from "../theme";
 
 interface Item {
   key: PanelKey;
@@ -106,7 +108,42 @@ interface Props {
   onSelect: (key: PanelKey) => void;
 }
 
+const THEME_OPTIONS: { mode: ThemeMode; label: string }[] = [
+  { mode: "system", label: "AUTO" },
+  { mode: "light", label: "浅色" },
+  { mode: "dark", label: "深色" },
+];
+
+function gear() {
+  return (
+    <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">
+      <path d="M9.1 1.5h-2l-.3 1.7c-.4.1-.8.3-1.1.5l-1.5-.9-1.4 1.4.9 1.5c-.2.3-.4.7-.5 1.1l-1.7.3v2l1.7.3c.1.4.3.8.5 1.1l-.9 1.5 1.4 1.4 1.5-.9c.3.2.7.4 1.1.5l.3 1.7h2l.3-1.7c.4-.1.8-.3 1.1-.5l1.5.9 1.4-1.4-.9-1.5c.2-.3.4-.7.5-1.1l1.7-.3v-2l-1.7-.3c-.1-.4-.3-.8-.5-1.1l.9-1.5-1.4-1.4-1.5.9c-.3-.2-.7-.4-1.1-.5L9.1 1.5zM8.1 10.2a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4z" />
+    </svg>
+  );
+}
+
+function check() {
+  return (
+    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 8.5l3.2 3.2L13 4.8" />
+    </svg>
+  );
+}
+
 export default function ActivityBar({ active, onSelect }: Props) {
+  const { mode, setMode } = useTheme();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!settingsRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
   return (
     <nav className="activitybar">
       {ITEMS.map((item) => (
@@ -119,6 +156,35 @@ export default function ActivityBar({ active, onSelect }: Props) {
           {item.icon}
         </button>
       ))}
+      <div className="activitybar-settings" ref={settingsRef}>
+        <button
+          className={`activitybar-gear${menuOpen ? " active" : ""}`}
+          title="管理 / 颜色主题"
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          {gear()}
+        </button>
+        {menuOpen ? (
+          <div className="theme-menu" role="menu">
+            <div className="theme-menu-title">颜色主题</div>
+            {THEME_OPTIONS.map((opt) => (
+              <button
+                key={opt.mode}
+                className={`theme-menu-item${mode === opt.mode ? " active" : ""}`}
+                role="menuitemradio"
+                aria-checked={mode === opt.mode}
+                onClick={() => {
+                  setMode(opt.mode);
+                  setMenuOpen(false);
+                }}
+              >
+                <span className="theme-menu-check">{mode === opt.mode ? check() : null}</span>
+                <span className="theme-menu-label">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </nav>
   );
 }

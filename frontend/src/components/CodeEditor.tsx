@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
-import { ensureMonacoServices, PYTHON_THEME } from "../monaco";
+import { ensureMonacoServices, PYTHON_THEME, PYTHON_THEME_LIGHT } from "../monaco";
 import { ensureLspInfo, startPythonLsp } from "../pythonLsp";
 import { organizeImports } from "../utils/api";
+import { useTheme } from "../theme";
 
 interface Props {
   value: string;
@@ -95,6 +96,7 @@ function applyOrganizeImports(editor: monaco.editor.IStandaloneCodeEditor): Prom
 export default function CodeEditor({ value, onChange, onRun, onFormatError, onEditorReady }: Props) {
   const onFormatErrorRef = useRef(onFormatError);
   onFormatErrorRef.current = onFormatError;
+  const { resolved } = useTheme();
 
   const [ready, setReady] = useState(false);
   const [docUri, setDocUri] = useState<string | null>(null);
@@ -180,7 +182,7 @@ export default function CodeEditor({ value, onChange, onRun, onFormatError, onEd
     <Editor
       height="100%"
       language="python"
-      theme={PYTHON_THEME}
+      theme={resolved === "light" ? PYTHON_THEME_LIGHT : PYTHON_THEME}
       path={docUri ?? undefined}
       defaultValue={value}
       onChange={(v) => onChange(v ?? "")}

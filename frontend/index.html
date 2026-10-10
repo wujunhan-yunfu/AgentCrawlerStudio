@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
     <title>AgentCrawlerStudio</title>
+    <script>
+      (function () {
+        try {
+          var m = localStorage.getItem("acs-color-theme") || "system";
+          var d =
+            m === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : m;
+          document.documentElement.dataset.theme = d;
+          document.documentElement.style.colorScheme = d;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

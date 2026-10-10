@@ -7,10 +7,10 @@ import getLanguagesServiceOverride from "@codingame/monaco-vscode-languages-serv
 import getLogServiceOverride from "@codingame/monaco-vscode-log-service-override";
 import getModelServiceOverride from "@codingame/monaco-vscode-model-service-override";
 import { registerPythonIntelliSense } from "./pythonIntelliSense";
-import { registerPythonTheme, PYTHON_THEME } from "./pythonTheme";
+import { registerPythonTheme, PYTHON_THEME, PYTHON_THEME_LIGHT } from "./pythonTheme";
 import { registerPythonCodeActions, registerPythonFormatting } from "./pythonActions";
 
-export { PYTHON_THEME };
+export { PYTHON_THEME, PYTHON_THEME_LIGHT };
 
 (globalThis as unknown as {
   MonacoEnvironment: {

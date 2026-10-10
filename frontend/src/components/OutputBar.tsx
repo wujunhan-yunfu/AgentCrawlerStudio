@@ -135,6 +135,7 @@ export default function OutputBar({
     dragging.current = true;
     document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
+    document.body.classList.add("resizing");
   };
 
   useEffect(() => {
@@ -147,6 +148,7 @@ export default function OutputBar({
       dragging.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.classList.remove("resizing");
     };
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);

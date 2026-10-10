@@ -282,6 +282,7 @@ export default function App() {
     const maxW = Math.max(MIN_EDITOR_WIDTH, window.innerWidth - ACTIVITY_BAR_WIDTH - MIN_EDITOR_WIDTH);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    document.body.classList.add("resizing");
 
     const onMove = (ev: MouseEvent) => {
       const w = Math.max(0, Math.min(maxW, startWidth + (ev.clientX - startX)));
@@ -302,6 +303,7 @@ export default function App() {
     const onUp = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.classList.remove("resizing");
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
@@ -322,6 +324,7 @@ export default function App() {
     const maxH = Math.max(MIN_OUTPUT_HEIGHT, window.innerHeight - STATUSBAR_HEIGHT - MIN_OUTPUT_HEIGHT);
     document.body.style.cursor = "nwse-resize";
     document.body.style.userSelect = "none";
+    document.body.classList.add("resizing");
 
     const onMove = (ev: MouseEvent) => {
       const w = Math.max(0, Math.min(maxW, startWidth + (ev.clientX - startX)));
@@ -344,6 +347,7 @@ export default function App() {
     const onUp = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.classList.remove("resizing");
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };

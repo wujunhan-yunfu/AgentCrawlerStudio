@@ -3,6 +3,7 @@ import apiIndex from "./playwrightApi.json";
 import libIndex from "./libApi.json";
 
 export const PYTHON_THEME = "vscode-dark-python";
+export const PYTHON_THEME_LIGHT = "vscode-light-python";
 
 // monaco 的 basic-languages 未被 treemended 编辑器打包, 这里内联 Python 语言配置。
 const PYTHON_CONF: monaco.languages.LanguageConfiguration = {
@@ -363,6 +364,39 @@ export function registerPythonTheme() {
       "editorInlayHint.background": "#262626",
       "editorInlayHint.parameterForeground": "#9DA5B0",
       "editorInlayHint.parameterBackground": "#262626",
+    },
+  });
+  monaco.editor.defineTheme(PYTHON_THEME_LIGHT, {
+    base: "vs",
+    inherit: true,
+    rules: [
+      { token: "", foreground: "000000", background: "FFFFFF" },
+      { token: "keyword", foreground: "AF00DB" },
+      { token: "constant", foreground: "0070C1" },
+      { token: "identifier", foreground: "001080" },
+      { token: "variable", foreground: "001080" },
+      { token: "parameter", foreground: "001080" },
+      { token: "entity.name.function", foreground: "795E26" },
+      { token: "support.function", foreground: "795E26" },
+      { token: "entity.name.type", foreground: "267F99" },
+      { token: "support.type", foreground: "267F99" },
+      { token: "decorator", foreground: "795E26" },
+      { token: "string", foreground: "A31515" },
+      { token: "string.escape", foreground: "EE0000" },
+      { token: "number", foreground: "098658" },
+      { token: "number.hex", foreground: "098658" },
+      { token: "comment", foreground: "008000" },
+      { token: "delimiter", foreground: "000000" },
+      { token: "operator", foreground: "000000" },
+      { token: "white", foreground: "000000" },
+    ],
+    colors: {
+      "editor.background": "#FFFFFF",
+      "editor.foreground": "#000000",
+      "editorInlayHint.foreground": "#4A4A4A",
+      "editorInlayHint.background": "#E8E8E8",
+      "editorInlayHint.parameterForeground": "#4A4A4A",
+      "editorInlayHint.parameterBackground": "#E8E8E8",
     },
   });
 }
