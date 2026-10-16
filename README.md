@@ -1,5 +1,7 @@
 <div align="center">
 
+[简体中文](./README.md) | [English](./README.en.md)
+
 # 🖥️ AgentCrawlerStudio
 
 **Xvfb 虚拟显示器 + 有头 Chrome 真实窗口 + Pillow 抓屏，通过 WebSocket 推流的浏览器远程控制台**
