@@ -603,6 +603,14 @@ async def test_execute_code_error():
     assert "boom" in result["error"]
 
 
+async def test_execute_system_exit():
+    """脚本 raise SystemExit 中止 → 作为运行失败返回, 不逃出 asyncio 循环杀进程。"""
+    cfg = make_cfg(crawler_id="c1", mode="run")
+    result = await execute(cfg, 'raise SystemExit("启动失败")\n', launcher=fake_launch)
+    assert result["ok"] is False
+    assert "启动失败" in result["error"]
+
+
 async def test_execute_verification_failed():
     cfg = make_cfg(crawler_id="c1", mode="run")
     result = await execute(cfg, 'raise VerificationFailed("verify")\n', launcher=fake_launch)
@@ -680,6 +688,25 @@ async def test_login_timeout(monkeypatch):
     await mgr._task
     assert mgr.status == "failed"
     assert "登录超时" in mgr.error
+
+
+async def test_login_system_exit(monkeypatch):
+    """脚本抛 SystemExit → 登录运行标记失败, 不能逃出主事件循环终止服务。"""
+    cfg = make_cfg(crawler_id="c1", login_timeout=5)
+    monkeypatch.setattr("backend.services.runmode.login_mode.load_head_code",
+                        lambda c: _a("print(1)"))
+
+    class _ExitStream(LoginFakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None,
+                           on_credential_saved=None):
+            raise SystemExit("[启动失败] 无法获得有效登录态")
+
+    mgr = LoginRunManager()
+    mgr.setup(cfg, _ExitStream())
+    await mgr.start()
+    await mgr._task
+    assert mgr.status == "failed"
+    assert "无法获得有效登录态" in mgr.error
 
 
 # ---------------------------------------------------------------------------

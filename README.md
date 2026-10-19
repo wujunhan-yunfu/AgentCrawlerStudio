@@ -149,7 +149,7 @@ uv run python -m backend.main
 
 启动后访问：**http://\<主机IP\>:8080**
 
-> 所有 API/WS 接口均挂在可配置前缀下，默认 **`/api/v1`**（如 `/api/v1/status`、`/api/v1/ws/live`），仅网页控制台 `GET /` 例外。API/WS 前缀通过 `--api-prefix` 或环境变量 `API_PREFIX` 修改，前端页面会从后端注入的 `acs-api-prefix` meta 自动读取该前缀发起请求（无需重新构建）；网页控制台入口与静态资源的前缀通过 `--web-prefix` 或环境变量 `WEB_PREFIX` 修改（默认 `/`，子路径部署时设为如 `/studio`，页面与资源会同时保留在 `/` 下，且页面内资源引用自动带上该前缀）。
+> 所有 API/WS 接口均挂在可配置前缀下，默认 **`/api/v1`**（如 `/api/v1/status`、`/api/v1/ws/live`），仅网页控制台 `GET /` 例外。API/WS 前缀通过 `--api-prefix` 或环境变量 `API_PREFIX` 修改，前端页面会从后端注入的 `acs-api-prefix` meta 自动读取该前缀发起请求（无需重新构建）。网页控制台入口与静态资源的前缀通过 `--web-prefix` 或环境变量 `WEB_PREFIX` 修改（默认 `/`，子路径部署时设为如 `/studio`）：此时网页、静态资源、API 与 WS 一起挂在 `/studio` 下（如 `/studio/api/v1/status`、`/studio/api/v1/ws/live`），前端会自动带上该前缀（meta 中的前缀已包含 `web_prefix`），可同时适配「反向代理保留/剥离子路径」两种方式；裸 `/api/v1` 仍保留可用（兼容旧脚本/探针）。
 
 ### 前端开发模式
 
@@ -238,8 +238,8 @@ backend/
 | `--quality` | `JPEG_QUALITY` | `70` | JPEG 画质 1-100, 越高越清晰但带宽越大 |
 | `--cdp-port` | `CDP_PORT` | `9222` | Chrome CDP 端口(占用时自动+1) |
 | `--host` / `--port` | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `8080` | Web 服务监听 |
-| `--web-prefix` | `WEB_PREFIX` | `/` | 网页控制台与静态资源访问前缀(子路径部署用); API/WS 前缀另由 `--api-prefix` 控制 |
-| `--api-prefix` | `API_PREFIX` | `/api/v1` | 后端 API/WS 接口统一前缀(前端页面自动读取, 无需重新构建) |
+| `--web-prefix` | `WEB_PREFIX` | `/` | 网页控制台、静态资源、API/WS 的统一访问前缀(子路径部署用, 如 `/studio` → API 为 `/studio/api/v1`); 裸 `/api/v1` 仍兼容可用 |
+| `--api-prefix` | `API_PREFIX` | `/api/v1` | 后端 API/WS 接口前缀(相对 `web_prefix` 挂载; 前端页面自动读取, 无需重新构建) |
 | `--chrome` | `CHROME_PATH` | 自动探测 | Chrome/Chromium 可执行文件路径 |
 | `--crawler-id` | `CRAWLER_ID` | 空（回退 `"default"`） | 当前爬虫 ID, Agent 会话 / 登录凭据 ticket / 代码提交快照均据此隔离并持久化到 MongoDB |
 | `--mongo-uri` | `MONGO_URI` | `mongodb://127.0.0.1:27017` | MongoDB 连接地址 |

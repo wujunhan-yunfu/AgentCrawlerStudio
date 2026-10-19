@@ -63,6 +63,36 @@ class Config:
     headless: bool | None = None           # 无头模式(None 按模式默认: run 无头)
     serve: bool = False                    # login 模式暴露实时画面服务(CDC 场景固定开启)
 
+    @property
+    def full_api_prefix(self) -> str:
+        """API/WS 实际挂载前缀: 子路径部署时随页面一起挂在 web_prefix 之下。
+
+        - `web_prefix="/"`(默认)时即 `api_prefix`(默认 `/api/v1`);
+        - `web_prefix="/studio"` 时页面/资源在 `/studio`, API/WS 在 `/studio/api/v1`,
+          前端从注入的 meta 读取该前缀发起请求(反向代理到不同工作区时无需再单独设 API 前缀)。
+        """
+        if not (self.api_prefix or "").strip("/"):
+            # api_prefix 为空 = 不要 API 子前缀; web_prefix 为根时保持无前缀。
+            return "" if (self.web_prefix or "/") == "/" else self.web_prefix
+        return join_prefix(self.web_prefix, self.api_prefix)
+
+
+def join_prefix(base: str, sub: str) -> str:
+    """拼接两级 URL 前缀: join_prefix("/studio", "/api/v1") == "/studio/api/v1"。
+
+    - `base` 为 "/" 或空时直接返回 `sub`;
+    - `sub` 为空或 "/" 时仅保留 `base`;
+    - 结果始终以 "/" 开头且不带尾部 "/"。
+    """
+    base = (base or "").strip().rstrip("/")
+    sub = (sub or "").strip()
+    if sub == "/":
+        sub = ""
+    if sub and not sub.startswith("/"):
+        sub = "/" + sub
+    joined = f"{base}{sub}"
+    return joined or "/"
+
 
 def find_chrome() -> str:
     for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):

@@ -52,6 +52,9 @@ def _run_code_worker(stream: Any, code: str, login_gate: Any,
 
     用户脚本(含 time.sleep 等阻塞调用)在单独事件循环里运行, 不阻塞主事件循环,
     从而保证 stdout 实时流式输出、空闲心跳与最终 done 标记能及时送达前端。
+
+    用户脚本抛出的 BaseException(如 SystemExit)会沿 asyncio 任务回抛到主事件
+    循环并直接终止进程, 因此这里必须就地收敛为失败结果。
     """
     loop = asyncio.new_event_loop()
     try:
@@ -59,6 +62,13 @@ def _run_code_worker(stream: Any, code: str, login_gate: Any,
         return loop.run_until_complete(
             stream.run_code(code, login_gate=login_gate, on_output=on_output)
         )
+    except BaseException as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "output": "",
+            "error": f"{type(exc).__name__}: {exc}",
+            "saved": [],
+        }
     finally:
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())
@@ -196,7 +206,9 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
                         result = run_task.result()
                     except asyncio.CancelledError:
                         raise
-                    except Exception as exc:  # noqa: BLE001
+                    except BaseException as exc:  # noqa: BLE001
+                        # BaseException(如用户脚本抛 SystemExit)也必须收敛为失败结果,
+                        # 否则会逃出 SSE 生成器并中断/关闭服务。
                         result = {
                             "ok": False,
                             "output": "",

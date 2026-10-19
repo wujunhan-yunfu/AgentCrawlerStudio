@@ -56,6 +56,9 @@ class LoginRunManager:
             await self._execute()
         except asyncio.CancelledError:
             raise
+        except SystemExit as exc:
+            # 用户代码 SystemExit 若回抛到主事件循环会直接终止服务, 这里收敛为失败
+            self._finish("failed", str(exc).strip() or "脚本调用 SystemExit 提前退出")
         except Exception as exc:  # noqa: BLE001
             self._finish("failed", f"{type(exc).__name__}: {exc}")
 

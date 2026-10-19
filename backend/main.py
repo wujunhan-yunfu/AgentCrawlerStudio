@@ -115,16 +115,29 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         }
 
     app.include_router(console.router)
-    app.include_router(runmode.router, prefix=cfg.api_prefix)
+
+    # API/WS 挂在 web_prefix + api_prefix 下(子路径部署时前端请求也要带该前缀),
+    # 同时保留裸 api_prefix(反向代理剥离 web_prefix 时仍可访问)。
+    api_routers = [runmode.router]
     if mode in ("dev", "login"):
-        app.include_router(stream.router, prefix=cfg.api_prefix)
+        api_routers.append(stream.router)
     if mode == "dev":
-        app.include_router(control.router, prefix=cfg.api_prefix)
-        app.include_router(input.router, prefix=cfg.api_prefix)
-        app.include_router(lsp.router, prefix=cfg.api_prefix)
-        app.include_router(agent.router, prefix=cfg.api_prefix)
-        app.include_router(versions.router, prefix=cfg.api_prefix)
-        app.include_router(export.router, prefix=cfg.api_prefix)
+        api_routers.extend(
+            [
+                control.router,
+                input.router,
+                lsp.router,
+                agent.router,
+                versions.router,
+                export.router,
+            ]
+        )
+    api_prefixes = [cfg.full_api_prefix]
+    if cfg.web_prefix != "/" and cfg.api_prefix and cfg.api_prefix != cfg.full_api_prefix:
+        api_prefixes.append(cfg.api_prefix)
+    for prefix in api_prefixes:
+        for router in api_routers:
+            app.include_router(router, prefix=prefix)
     if cfg.web_prefix != "/":
         app.add_api_route(f"{cfg.web_prefix}", console.index, methods=["GET"])
         app.add_api_route(f"{cfg.web_prefix}/", console.index, methods=["GET"])

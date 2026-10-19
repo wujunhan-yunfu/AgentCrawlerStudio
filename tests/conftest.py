@@ -641,14 +641,22 @@ def make_test_app(stream=None, agent=None, run_login=None, cfg=None) -> Any:
                 name="assets_web",
             )
     app.include_router(console_router.router)
-    app.include_router(control_router.router, prefix=cfg.api_prefix)
-    app.include_router(input_router.router, prefix=cfg.api_prefix)
-    app.include_router(lsp_router.router, prefix=cfg.api_prefix)
-    app.include_router(runmode_router.router, prefix=cfg.api_prefix)
-    app.include_router(stream_router.router, prefix=cfg.api_prefix)
-    app.include_router(agent_router.router, prefix=cfg.api_prefix)
-    app.include_router(versions_router.router, prefix=cfg.api_prefix)
-    app.include_router(export_router.router, prefix=cfg.api_prefix)
+    api_routers = [
+        control_router.router,
+        input_router.router,
+        lsp_router.router,
+        runmode_router.router,
+        stream_router.router,
+        agent_router.router,
+        versions_router.router,
+        export_router.router,
+    ]
+    api_prefixes = [cfg.full_api_prefix]
+    if cfg.web_prefix != "/" and cfg.api_prefix and cfg.api_prefix != cfg.full_api_prefix:
+        api_prefixes.append(cfg.api_prefix)
+    for prefix in api_prefixes:
+        for router in api_routers:
+            app.include_router(router, prefix=prefix)
     if cfg.web_prefix != "/":
         app.add_api_route(f"{cfg.web_prefix}", console_router.index, methods=["GET"])
         app.add_api_route(f"{cfg.web_prefix}/", console_router.index, methods=["GET"])

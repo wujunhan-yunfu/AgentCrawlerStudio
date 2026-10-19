@@ -262,4 +262,31 @@ def test_build_config_cli_args(monkeypatch):
     assert c.height == 600
     assert c.api_prefix == "/foo"
     assert c.web_prefix == "/panel"
+    assert c.full_api_prefix == "/panel/foo"
     assert c.dev_limit is False
+
+
+def test_full_api_prefix():
+    """API/WS 前缀随 web_prefix 一起下移(子路径部署), 默认仍为 /api/v1。"""
+    from backend.config import Config
+
+    assert Config().full_api_prefix == "/api/v1"
+    assert Config(web_prefix="/").full_api_prefix == "/api/v1"
+    assert Config(web_prefix="/studio").full_api_prefix == "/studio/api/v1"
+    assert Config(web_prefix="/studio", api_prefix="/api/v2").full_api_prefix == "/studio/api/v2"
+    assert Config(web_prefix="/a/b", api_prefix="v3").full_api_prefix == "/a/b/v3"
+    # api_prefix 置空 = 不要 API 子前缀
+    assert Config(api_prefix="/").full_api_prefix == ""
+    assert Config(web_prefix="/studio", api_prefix="/").full_api_prefix == "/studio"
+
+
+def test_join_prefix():
+    from backend.config import join_prefix
+
+    assert join_prefix("/", "/api/v1") == "/api/v1"
+    assert join_prefix("", "/api/v1") == "/api/v1"
+    assert join_prefix("/studio", "/api/v1") == "/studio/api/v1"
+    assert join_prefix("/studio/", "api/v1") == "/studio/api/v1"
+    assert join_prefix("/studio", "") == "/studio"
+    assert join_prefix("/studio", "/") == "/studio"
+    assert join_prefix("", "") == "/"

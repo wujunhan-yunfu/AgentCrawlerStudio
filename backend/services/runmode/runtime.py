@@ -464,6 +464,11 @@ async def execute(
         return {"ok": True, "error": "", "output": "", "saved": saver.saved}
     except VerificationFailed as exc:
         return {"ok": False, "error": str(exc), "output": "", "saved": saver.saved}
+    except SystemExit as exc:
+        # 脚本 raise SystemExit("原因") 中止时按运行失败返回, 避免逃出 asyncio 循环
+        # 直接终止 run 模式进程(丢失 run.failed webhook 与数据 flush)。
+        msg = str(exc).strip() or "脚本调用 SystemExit 提前退出"
+        return {"ok": False, "error": msg, "output": "", "saved": saver.saved}
     except Exception:  # noqa: BLE001
         return {
             "ok": False,

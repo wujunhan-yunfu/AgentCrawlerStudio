@@ -554,6 +554,13 @@ class BrowserStream:
             # 产物运行期人机验证限次未通过: 本次运行直接结束(不弹窗)
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": str(exc), "saved": saved}
+        except SystemExit as exc:
+            # 脚本常用 raise SystemExit("原因") 中止(如登录失败)。SystemExit 继承
+            # BaseException, 若不在此拦截会逃出事件循环并终止进程/服务, 这里按普通
+            # 运行失败返回, 保留脚本给出的原因(不做堆栈包装)。
+            saved = env_obj.saved_items() if env_obj is not None else []
+            msg = str(exc).strip() or "脚本调用 SystemExit 提前退出"
+            return {"ok": False, "output": out.getvalue(), "error": msg, "saved": saved}
         except Exception:  # noqa: BLE001
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": traceback.format_exc(), "saved": saved}

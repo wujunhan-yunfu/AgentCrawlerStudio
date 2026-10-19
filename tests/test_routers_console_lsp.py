@@ -52,21 +52,44 @@ async def test_console_index_web_prefix():
 
 
 async def test_console_index_api_prefix_meta():
+    """设置 web_prefix 后 API/WS 前缀自动带上它, 前端按注入的 meta 发起请求。"""
     from backend.config import Config
 
-    cfg = Config(web_prefix="/studio", api_prefix="/api/studio/v1")
+    cfg = Config(web_prefix="/studio", api_prefix="/api/v1")
     app = make_test_app(cfg=cfg)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as c:
         resp = await c.get("/studio/")
         assert resp.status_code == 200
-        assert b'<meta name="acs-api-prefix" content="/api/studio/v1">' in resp.content
+        assert b'<meta name="acs-api-prefix" content="/studio/api/v1">' in resp.content
         assert b'="/assets/' not in resp.content
-        r_new = await c.get("/api/studio/v1/status")
-        assert r_new.status_code == 200
-        r_old = await c.get("/api/v1/status")
-        assert r_old.status_code == 404
+        # 前端会请求 /studio/api/v1/..., 必须可达(此前会 404)
+        r_prefixed = await c.get("/studio/api/v1/status")
+        assert r_prefixed.status_code == 200
+        # 反向代理剥离 web_prefix 时退化为裸 api_prefix, 同样可达
+        r_bare = await c.get("/api/v1/status")
+        assert r_bare.status_code == 200
+        # 未挂载的前缀仍然 404
+        r_missing = await c.get("/studio/api/studio/v1/status")
+        assert r_missing.status_code == 404
+
+
+async def test_console_index_custom_api_prefix_under_web_prefix():
+    """自定义 api_prefix 同样随 web_prefix 一起挂载。"""
+    from backend.config import Config
+
+    cfg = Config(web_prefix="/studio", api_prefix="/api/custom")
+    app = make_test_app(cfg=cfg)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.get("/studio/")
+        assert resp.status_code == 200
+        assert b'<meta name="acs-api-prefix" content="/studio/api/custom">' in resp.content
+        assert (await c.get("/studio/api/custom/status")).status_code == 200
+        assert (await c.get("/api/custom/status")).status_code == 200
+        assert (await c.get("/api/v1/status")).status_code == 404
 
 
 async def test_console_assets_web_prefix():

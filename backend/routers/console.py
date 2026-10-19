@@ -18,8 +18,12 @@ def web_prefix(request: Request) -> str:
 
 
 def api_prefix(request: Request) -> str:
+    """注入给前端的 API/WS 前缀(含 web_prefix, 子路径部署时一并带上)。"""
     cfg = getattr(request.app.state, "cfg", None)
-    return getattr(cfg, "api_prefix", "/api/v1")
+    full = getattr(cfg, "full_api_prefix", None)
+    if full:
+        return full
+    return getattr(cfg, "api_prefix", "/api/v1") or "/api/v1"
 
 
 def _inject_meta(html: str, prefix: str) -> str:

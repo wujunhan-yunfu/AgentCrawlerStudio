@@ -901,6 +901,33 @@ async def test_run_code_exec_error(stream, monkeypatch):
     assert "user code boom" in res["error"]
 
 
+async def test_run_code_system_exit(stream, monkeypatch):
+    """脚本 raise SystemExit 中止 → 按运行失败返回, 不能逃逸终止进程/服务。"""
+    import backend.services.crawler as cmod
+
+    monkeypatch.setattr(stream, "restart_chrome", _AsyncNoop)
+    monkeypatch.setattr(stream, "_pw", _make_fake_pw)
+    monkeypatch.setattr(cmod, "CrawlerEnv", _FullFakeEnv)
+    res = await stream.run_code(
+        "print('bye')\nraise SystemExit('[启动失败] 无法获得有效登录态')"
+    )
+    assert res["ok"] is False
+    assert res["error"] == "[启动失败] 无法获得有效登录态"
+    assert "bye" in res["output"]
+
+
+async def test_run_code_system_exit_without_message(stream, monkeypatch):
+    """无消息的 SystemExit 也要有可读的兜底错误信息。"""
+    import backend.services.crawler as cmod
+
+    monkeypatch.setattr(stream, "restart_chrome", _AsyncNoop)
+    monkeypatch.setattr(stream, "_pw", _make_fake_pw)
+    monkeypatch.setattr(cmod, "CrawlerEnv", _FullFakeEnv)
+    res = await stream.run_code("raise SystemExit()")
+    assert res["ok"] is False
+    assert "SystemExit" in res["error"]
+
+
 async def test_run_code_login_cancelled(stream, monkeypatch):
     """用户取消登录 → 脚本终止并返回明确结果, 而不是异常堆栈。"""
     from backend.services.agent.login import LoginCancelled

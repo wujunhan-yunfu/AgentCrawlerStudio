@@ -198,6 +198,23 @@ async def test_run_worker_exception():
     assert "boom-thread" in chunks[-1]["result"]["error"]
 
 
+async def test_run_worker_system_exit():
+    """worker 抛 BaseException(SystemExit)时也要收敛为 done 结果, 不能逃出 SSE 流。"""
+    class _ExitStream(FakeStream):
+        async def run_code(self, code, login_gate=None, restart=True, on_output=None):
+            raise SystemExit("[启动失败] 无法获得有效登录态")
+
+    app = make_test_app(stream=_ExitStream())
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.post("/api/v1/run", json={"code": "x"})
+        chunks = await _run_chunks(resp)
+    assert chunks[-1]["type"] == "done"
+    assert chunks[-1]["result"]["ok"] is False
+    assert "无法获得有效登录态" in chunks[-1]["result"]["error"]
+
+
 async def test_run_login_status_not_waiting(client):
     resp = await client.get("/api/v1/run/abc/login")
     assert resp.status_code == 200

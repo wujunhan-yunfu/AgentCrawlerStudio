@@ -150,7 +150,7 @@ uv run python -m backend.main
 
 Once started, visit: **http://\<host-IP\>:8080**
 
-> All API/WS endpoints are mounted under a configurable prefix, defaulting to **`/api/v1`** (e.g. `/api/v1/status`, `/api/v1/ws/live`), with the web console `GET /` as the only exception. The API/WS prefix is changed via `--api-prefix` or the `API_PREFIX` env var, and the frontend automatically reads it from the backend-injected `acs-api-prefix` meta to issue requests (no rebuild needed); the prefix for the web console entry and static assets is changed via `--web-prefix` or the `WEB_PREFIX` env var (default `/`; set it to e.g. `/studio` for sub-path deployment, in which case the page and assets are also kept under `/`, and asset references inside the page automatically carry that prefix).
+> All API/WS endpoints are mounted under a configurable prefix, defaulting to **`/api/v1`** (e.g. `/api/v1/status`, `/api/v1/ws/live`), with the web console `GET /` as the only exception. The API/WS prefix is changed via `--api-prefix` or the `API_PREFIX` env var, and the frontend automatically reads it from the backend-injected `acs-api-prefix` meta to issue requests (no rebuild needed). The prefix for the web console entry and static assets is changed via `--web-prefix` or the `WEB_PREFIX` env var (default `/`; set it to e.g. `/studio` for sub-path deployment): the page, static assets, API and WS then all live under `/studio` (e.g. `/studio/api/v1/status`, `/studio/api/v1/ws/live`) and the frontend includes that prefix automatically (the injected meta already contains `web_prefix`), so both reverse-proxy modes (keeping or stripping the sub-path) work; the bare `/api/v1` remains available for backward compatibility (old scripts/probes).
 
 ### Frontend Dev Mode
 
@@ -239,8 +239,8 @@ backend/
 | `--quality` | `JPEG_QUALITY` | `70` | JPEG quality 1-100; higher is sharper but uses more bandwidth |
 | `--cdp-port` | `CDP_PORT` | `9222` | Chrome CDP port (auto +1 if occupied) |
 | `--host` / `--port` | `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `8080` | Web service listener |
-| `--web-prefix` | `WEB_PREFIX` | `/` | Access prefix for the web console and static assets (for sub-path deployment); the API/WS prefix is controlled separately by `--api-prefix` |
-| `--api-prefix` | `API_PREFIX` | `/api/v1` | Unified prefix for backend API/WS endpoints (frontend reads it automatically, no rebuild needed) |
+| `--web-prefix` | `WEB_PREFIX` | `/` | Common access prefix for the web console, static assets and API/WS (for sub-path deployment, e.g. `/studio` → API at `/studio/api/v1`); the bare `/api/v1` stays available for compatibility |
+| `--api-prefix` | `API_PREFIX` | `/api/v1` | Prefix for backend API/WS endpoints (mounted relative to `web_prefix`; frontend reads it automatically, no rebuild needed) |
 | `--chrome` | `CHROME_PATH` | auto-detect | Path to the Chrome/Chromium executable |
 | `--crawler-id` | `CRAWLER_ID` | empty (falls back to `"default"`) | Current crawler ID; Agent sessions / login credential tickets / code commit snapshots are all isolated by it and persisted to MongoDB |
 | `--mongo-uri` | `MONGO_URI` | `mongodb://127.0.0.1:27017` | MongoDB connection URI |
