@@ -11,3 +11,18 @@ def cap_text(text: Any, limit: int) -> str:
     if len(s) > limit:
         return s[:limit] + f"\n...[已截断, 共 {len(s)} 字符]"
     return s
+
+
+def content_text(content: Any) -> str:
+    """把 AIMessage.content(字符串或多模态 content block 列表)归一为纯文本。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "".join(parts)
+    return str(content) if content else ""

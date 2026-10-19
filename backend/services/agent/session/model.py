@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from .event import EventHub
+from .event import PERSISTED_EVENT_TYPES, EventHub
 
 
 @dataclass
@@ -28,6 +28,12 @@ class AgentSession:
     login_future: asyncio.Future | None = None
     # 执行事件持久化回调(由 runner 注入): persist(session, event) -> None
     persist: Any = None
+    # 持久化 FIFO 队列与消费任务(由 runner 在有事件循环时启动):
+    # emit 的事件先实时广播, 再入队顺序落库, 保证历史记录顺序与执行顺序一致。
+    persist_queue: Any = None
+    persist_worker: Any = None
+    # 最近一条已落库的 assistant 文本, 用于避免 _finalize_done 重复写入最终回答
+    last_assistant_text: str = ""
     task_handle: asyncio.Task | None = None
     # 会话落库与 Agent 预构建的后台任务(创建会话时即启动, 不阻塞请求响应)
     persist_task: Any = None
@@ -44,6 +50,19 @@ class AgentSession:
         event.setdefault("session_id", self.id)
         event.setdefault("crawler_id", self.crawler_id)
         self.hub.emit(event)
+        self._enqueue_persist(event)
+
+    def _enqueue_persist(self, event: dict[str, Any]) -> None:
+        """把需要留痕的事件放入持久化队列(实时广播不受影响)。"""
+        queue = self.persist_queue
+        if queue is None or self.persist is None:
+            return
+        if event.get("type") not in PERSISTED_EVENT_TYPES:
+            return
+        try:
+            queue.put_nowait(dict(event))
+        except asyncio.QueueFull:
+            pass
 
 
 class EditorState:

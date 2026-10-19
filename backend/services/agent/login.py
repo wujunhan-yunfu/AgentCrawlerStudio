@@ -474,7 +474,6 @@ class LoginGate:
                 "crawler_id": session.crawler_id,
             }
         )
-        await self._persist({"type": "login_request", "content": "", "meta": {"login": payload}})
         monitor = None
         if payload.get("login_type") == "qr":
             monitor = loop.create_task(self._monitor_qr(payload))
@@ -497,7 +496,6 @@ class LoginGate:
         r = await self.bridge.evaluate(f"document.querySelector({sel!r})?.click(); true")
         ok = bool(isinstance(r, dict) and r.get("ok"))
         msg = "已触发发送验证码，请查看手机" if ok else f"触发失败: {r.get('error') if isinstance(r, dict) else '未知错误'}"
-        await self._persist({"type": "login_action", "action": "send_code", "ok": ok, "message": msg})
         self.session.emit({"type": "login_action", "action": "send_code", "ok": ok, "message": msg})
         return {"ok": ok, "message": msg}
 
@@ -510,7 +508,6 @@ class LoginGate:
             await asyncio.sleep(0.6)
         image = await self._captcha_image()
         msg = "验证码已刷新" if image else "未找到图形验证码元素"
-        await self._persist({"type": "login_action", "action": "refresh_captcha", "ok": bool(image), "message": msg})
         self.session.emit({"type": "login_action", "action": "refresh_captcha", "ok": bool(image), "message": msg})
         return {"ok": bool(image), "message": msg, "image": image}
 
@@ -536,7 +533,6 @@ class LoginGate:
         await asyncio.sleep(0.8)
         await self.bridge.evaluate(_QR_TAB_JS)
         msg = "二维码已刷新，请用最新二维码重新扫码" if ok else "二维码刷新失败"
-        await self._persist({"type": "login_action", "action": "refresh_qr", "ok": ok, "message": msg})
         self.session.emit({"type": "login_action", "action": "refresh_qr", "ok": ok, "message": msg})
         return {"ok": ok, "message": msg}
 
@@ -565,11 +561,8 @@ class LoginGate:
                 return
 
     async def finish(self, method: str, url: str) -> None:
-        """登录成功完成: 向前端广播 login_success 并持久化。"""
+        """登录成功完成: 向前端广播 login_success(由事件持久化队列落库)。"""
         self.session.emit({"type": "login_success", "method": method, "url": url})
-        await self._persist(
-            {"type": "login_success", "content": "", "meta": {"method": method, "url": url}}
-        )
 
     async def _persist(self, event: dict[str, Any]) -> None:
         persist = getattr(self.session, "persist", None)

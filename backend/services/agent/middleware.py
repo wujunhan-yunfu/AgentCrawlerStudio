@@ -24,7 +24,7 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
-from .core.text import cap_text
+from .core.text import cap_text, content_text
 from .session.model import AgentSession
 
 _MAX_RESULT = 4000
@@ -60,7 +60,11 @@ class AgentEventMiddleware(AgentMiddleware[Any, Any, Any]):
         if not isinstance(last, AIMessage):
             return None
         if last.content:
-            self._session.emit({"type": "message_end"})
+            # 携带文本: 前端据此结束流式气泡, 同时落库为该轮 assistant 消息
+            # (含调用工具前输出的过渡文字, 刷新/切换会话后可还原)。
+            self._session.emit(
+                {"type": "message_end", "content": content_text(last.content)}
+            )
         for call in last.tool_calls:
             raw_args = call.get("args") or {}
             if isinstance(raw_args, str):

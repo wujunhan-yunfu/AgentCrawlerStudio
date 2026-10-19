@@ -25,29 +25,15 @@ from .agent import build_agent
 from .bridge import BrowserBridge
 from .checkpointer import get_checkpointer
 from .core.llm import build_chat_model
+from .core.text import content_text
 from .login import LoginGate
 from .session import AgentSession, EditorState, EventHub
+from .session.event import PERSISTED_EVENT_TYPES
 from .session.store import AgentStore
 
 _STREAM_MODES = ["updates", "custom", "messages"]
 _MAX_SESSIONS = 200
 
-# 持久化这些类型的执行事件到消息历史, 供前端在会话恢复/刷新后重建执行记录
-# (tool / tool_result / editor_code 用于还原工具执行框体与代码变更 diff 卡片)。
-_PERSISTED_EVENT_TYPES = {
-    "status",
-    "error",
-    "plan",
-    "todos",
-    "saved",
-    "question",
-    "tool",
-    "tool_result",
-    "editor_code",
-    "login_request",
-    "login_success",
-    "login_action",
-}
 # 瞬时状态(思考中)不落库, 避免刷屏。
 _TRANSIENT_STATUS = {"思考中..."}
 
@@ -184,6 +170,7 @@ class AgentManager:
                     self._ensure_agent(session)
                 except RuntimeError as exc:
                     raise ValueError(str(exc)) from exc
+        self._start_persist_worker(session)
         # 先广播用户消息回显, 让前端立即看到, 再落库
         session.status = "running"
         session.emit(
@@ -210,6 +197,7 @@ class AgentManager:
                 session.login_future.cancel()
             if session.task_handle is not None:
                 session.task_handle.cancel()
+        self._stop_persist_worker(session)
         await self._store_call("delete_session", session_id, cid)
         try:
             await get_checkpointer(self.cfg).adelete_thread(session_id)
@@ -373,6 +361,59 @@ class AgentManager:
             old = self.sessions[sid]
             if old.status in ("done", "error", "cancelled", "idle"):
                 self.sessions.pop(sid, None)
+                self._stop_persist_worker(old)
+
+    # ---------------------------------------------------------- 事件持久化
+
+    def _start_persist_worker(self, session: AgentSession) -> None:
+        """启动会话的事件持久化消费任务(需在事件循环中调用)。
+
+        事件通过 FIFO 队列顺序落库, 保证历史记录顺序与真实执行顺序一致;
+        实时广播仍由 emit 立即完成, 不受落库影响。
+        """
+        if session.persist_queue is not None:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        session.persist = self._persist_event
+        session.persist_queue = asyncio.Queue(maxsize=4096)
+        session.persist_worker = asyncio.get_running_loop().create_task(
+            self._persist_worker(session)
+        )
+
+    def _stop_persist_worker(self, session: AgentSession | None) -> None:
+        if session is None:
+            return
+        worker = session.persist_worker
+        session.persist_worker = None
+        session.persist_queue = None
+        if worker is not None and not worker.done():
+            worker.cancel()
+
+    async def _persist_worker(self, session: AgentSession) -> None:
+        queue = session.persist_queue
+        if queue is None:
+            return
+        while True:
+            event = await queue.get()
+            try:
+                await self._persist_event(session, event)
+            except Exception:  # noqa: BLE001  MongoDB 不可用等: 丢弃该事件即可
+                pass
+            finally:
+                queue.task_done()
+
+    async def _flush_persist(self, session: AgentSession) -> None:
+        """等待已入队的执行事件全部落库(带超时, 避免拖住收尾)。"""
+        queue = session.persist_queue
+        if queue is None:
+            return
+        try:
+            await asyncio.wait_for(queue.join(), timeout=10)
+        except BaseException:  # noqa: BLE001  超时/任务被取消时不再等待
+            pass
 
     # ---------------------------------------------------------- 控制接口
 
@@ -562,10 +603,12 @@ class AgentManager:
                     stream_mode=_STREAM_MODES,
                 ),
             )
+            await self._flush_persist(session)
             await self._finalize_done(session)
         except asyncio.CancelledError:
             session.status = "cancelled"
             session.emit({"type": "status", "content": "任务已取消"})
+            await self._flush_persist(session)
             await self._store_call(
                 "update_session", session.id, session.crawler_id, status="cancelled"
             )
@@ -574,10 +617,8 @@ class AgentManager:
             session.status = "error"
             session.error = f"{type(exc).__name__}: {exc}"
             session.emit({"type": "status", "content": f"任务出错: {session.error}"})
-            await self._persist_event(
-                session, {"type": "error", "content": session.error}
-            )
             session.emit({"type": "error", "error": session.error})
+            await self._flush_persist(session)
             await self._store_call(
                 "update_session", session.id, session.crawler_id, status="error"
             )
@@ -605,34 +646,29 @@ class AgentManager:
     async def _handle_event(self, session: AgentSession, mode: str, data: Any) -> None:
         if mode == "custom":
             if isinstance(data, dict):
-                await self._persist_event(session, data)
+                # 落库由 emit 的事件持久化队列统一完成, 避免重复写入
                 session.emit(data)
         elif mode == "messages":
             try:
                 chunk, _meta = data
             except (ValueError, TypeError):
                 return
-            if (
-                isinstance(chunk, AIMessageChunk)
-                and chunk.content
-                and not chunk.tool_call_chunks
-            ):
-                session.emit({"type": "delta", "content": chunk.content})
+            # 只要本块带有文本就转发: 部分模型(如 dashscope/部分网关)会把
+            # 「调用工具前的过渡文本」与 tool_call 增量放在同一块里,
+            # 不能因为带 tool_call_chunks 就把文本丢掉。
+            if isinstance(chunk, AIMessageChunk) and chunk.content:
+                text = content_text(chunk.content)
+                if text:
+                    session.emit({"type": "delta", "content": text})
         elif mode == "updates":
             if isinstance(data, dict):
                 for _node, update in data.items():
                     if isinstance(update, dict) and update.get("todos") is not None:
                         todos = update["todos"]
-                        await self._persist_event(
-                            session, {"type": "todos", "todos": todos}
-                        )
                         session.emit({"type": "todos", "todos": todos})
                         # 把 todo 的进度同步到 plan 的 steps, 前端立刻更新 plan 状态
                         updated_plan = self._sync_plan_status(session, todos)
                         if updated_plan is not None:
-                            await self._persist_event(
-                                session, {"type": "plan", "plan": updated_plan}
-                            )
                             session.emit({"type": "plan", "plan": updated_plan})
 
     def _sync_plan_status(
@@ -684,7 +720,23 @@ class AgentManager:
     ) -> None:
         """把重要的执行事件写入消息历史, 便于会话恢复后复盘。"""
         etype = event.get("type")
-        if etype not in _PERSISTED_EVENT_TYPES:
+        if etype not in PERSISTED_EVENT_TYPES:
+            return
+        # 模型本轮输出文本: 直接作为 assistant 消息落库(含调用工具前的过渡文字)
+        if etype == "message_end":
+            text = event.get("content", "") or ""
+            if not isinstance(text, str):
+                text = str(text)
+            if text.strip():
+                await self._store_call(
+                    "add_message",
+                    session.id,
+                    session.crawler_id,
+                    "assistant",
+                    "text",
+                    text,
+                )
+                session.last_assistant_text = text
             return
         content = ""
         meta: dict[str, Any] = {}
@@ -718,7 +770,15 @@ class AgentManager:
             meta = {"base": event.get("base", "") or ""}
         elif etype == "login_request":
             content = "需要用户完成登录"
-            meta = {"login": event.get("login") or event.get("meta", {}).get("login")}
+            login = event.get("login") or event.get("meta", {}).get("login")
+            if login is None:
+                login = {
+                    k: v
+                    for k, v in event.items()
+                    if k
+                    not in ("type", "session_id", "crawler_id", "content", "meta")
+                } or None
+            meta = {"login": login}
         elif etype == "login_success":
             content = f"登录成功, 跳转到 {event.get('url') or ''}".strip()
             meta = {"method": event.get("method"), "url": event.get("url")}
@@ -744,21 +804,13 @@ class AgentManager:
             "questions": payload.get("questions"),
         }
         session.answer_future = asyncio.get_running_loop().create_future()
-        await self._persist_event(
-            session,
-            {
-                "type": "question",
-                "qid": payload.get("qid"),
-                "questions": payload.get("questions"),
-            },
-        )
-        session.emit(
-            {
-                "type": "question",
-                "qid": payload.get("qid"),
-                "questions": payload.get("questions"),
-            }
-        )
+        question_event = {
+            "type": "question",
+            "qid": payload.get("qid"),
+            "questions": payload.get("questions"),
+        }
+        # 落库由 emit 的持久化队列统一完成
+        session.emit(dict(question_event))
         try:
             answers = await session.answer_future
         finally:
@@ -780,7 +832,9 @@ class AgentManager:
                     content = m.content
                     result = content if isinstance(content, str) else str(content)
                     break
-        if result:
+        # 本轮各条 AI 文本已由 message_end 事件落库; 仅当最终回答未被记录时补写,
+        # 避免历史里出现重复的 assistant 消息。
+        if result and result != session.last_assistant_text:
             await self._store_call(
                 "add_message",
                 session.id,
@@ -789,6 +843,7 @@ class AgentManager:
                 "text",
                 result,
             )
+            session.last_assistant_text = result
         count = (
             await self._store_call(
                 "count_messages", session.id, session.crawler_id, default=0

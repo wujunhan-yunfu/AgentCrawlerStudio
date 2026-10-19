@@ -53,6 +53,19 @@ async def test_aafter_model_content_and_tool_calls():
     assert "tool" in types
     tool = [e for e in session.hub._buffer if e["type"] == "tool"][-1]
     assert tool["name"] == "t1"
+    # message_end 需携带本轮文本, 供前端落库还原「调用工具前的过渡文字」
+    end = [e for e in session.hub._buffer if e["type"] == "message_end"][-1]
+    assert end["content"] == "回答"
+
+
+async def test_message_end_content_blocks():
+    """多模态 content block 列表归一为纯文本。"""
+    mw, session = make_middleware()
+    aim = AIMessage(content="")
+    aim.content = [{"type": "text", "text": "第一段"}, "拼接", {"type": "text", "text": "第二段"}]
+    await mw.aafter_model({"messages": [aim]}, None)
+    end = [e for e in session.hub._buffer if e["type"] == "message_end"][-1]
+    assert end["content"] == "第一段拼接第二段"
 
 
 async def test_aafter_model_string_args():

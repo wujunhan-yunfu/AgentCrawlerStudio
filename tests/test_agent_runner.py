@@ -954,16 +954,34 @@ async def test_handle_event_custom_and_messages(manager):
     s = AgentSession(id="sh", crawler_id=manager.default_crawler_id(), title="T", hub=manager.hub)
     await manager._handle_event(s, "custom", {"type": "tool", "name": "x", "args": "{}", "id": "1"})
     await manager._handle_event(s, "custom", "not-a-dict")
+    # delta 是瞬时事件(不入 hub 缓冲), 直接记录 emit 调用
+    deltas: list[str] = []
+    orig_emit = s.emit
+
+    def record(event):
+        if event.get("type") == "delta":
+            deltas.append(event.get("content"))
+        orig_emit(event)
+
+    s.emit = record  # type: ignore[method-assign]
     await manager._handle_event(
         s, "messages", (AIMessageChunk(content="增量"), None)
     )
-    # 带 tool_call_chunks 的 chunk 不转发 delta
+    # 带 tool_call_chunks 但 content 为空的 chunk 不转发 delta
     from langchain_core.messages.tool import ToolCallChunk
 
     chunk = AIMessageChunk(
         content="", tool_call_chunks=[ToolCallChunk(name="t", args="{}", id="1")]
     )
     await manager._handle_event(s, "messages", (chunk, None))
+    # 携带文本且同时带 tool_call_chunks 的 chunk: 文本必须转发(工具调用前的过渡文字)
+    chunk_text = AIMessageChunk(
+        content="调用工具前的过渡文本",
+        tool_call_chunks=[ToolCallChunk(name="t", args="{}", id="2")],
+    )
+    await manager._handle_event(s, "messages", (chunk_text, None))
+    assert "增量" in deltas
+    assert "调用工具前的过渡文本" in deltas
     await manager._handle_event(s, "messages", ("bad", None))
     await manager._handle_event(s, "messages", None)
     # updates 带 todos
@@ -1058,6 +1076,61 @@ async def test_finalize_done(manager):
     s2.config = {"configurable": {"thread_id": s2.id}}
     await manager._finalize_done(s2)
     assert s2.status == "done"
+
+
+async def test_finalize_done_no_duplicate_after_message_end(manager):
+    """最终回答已由 message_end 落库时, _finalize_done 不再重复写入。"""
+    from backend.services.agent.session.model import AgentSession
+
+    s = AgentSession(id="sfd", crawler_id=manager.default_crawler_id(), title="T", hub=manager.hub)
+    manager.sessions[s.id] = s
+    await manager._store_call("create_session", s.id, s.crawler_id, s.title)
+    s.agent = FakeAgent(state_messages=[AIMessage(content="最终回答", tool_calls=[])])
+    s.config = {"configurable": {"thread_id": s.id}}
+    s.last_assistant_text = "最终回答"
+    await manager._finalize_done(s)
+    msgs = await manager.get_messages(None, s.id)
+    assert [m["content"] for m in msgs] == []
+
+
+async def test_emit_persists_execution_events_in_order(manager):
+    """emit 的执行事件按 FIFO 顺序落库; 过渡文本(message_end)记为 assistant。"""
+    from backend.services.agent.session.model import AgentSession
+
+    s = AgentSession(id="pev", crawler_id=manager.default_crawler_id(), title="T", hub=manager.hub)
+    manager.sessions[s.id] = s
+    manager._start_persist_worker(s)
+    assert s.persist_queue is not None
+
+    s.emit({"type": "status", "content": "思考中..."})  # 瞬时状态不落库
+    s.emit({"type": "message_end", "content": "我先读取代码。"})
+    s.emit({"type": "tool", "id": "t1", "name": "get_editor_code", "args": "{}"})
+    s.emit({"type": "tool_result", "id": "t1", "name": "get_editor_code", "content": "code"})
+    s.emit({"type": "message_end", "content": "最终回答。"})
+    await manager._flush_persist(s)
+
+    msgs = await manager.get_messages(None, s.id)
+    assert [(m["role"], m["type"]) for m in msgs] == [
+        ("assistant", "text"),
+        ("event", "tool"),
+        ("event", "tool_result"),
+        ("assistant", "text"),
+    ]
+    assert msgs[0]["content"] == "我先读取代码。"
+    assert msgs[-1]["content"] == "最终回答。"
+    assert s.last_assistant_text == "最终回答。"
+    manager._stop_persist_worker(s)
+
+
+async def test_message_end_empty_text_not_persisted(manager):
+    from backend.services.agent.session.model import AgentSession
+
+    s = AgentSession(id="pev2", crawler_id=manager.default_crawler_id(), title="T", hub=manager.hub)
+    manager._start_persist_worker(s)
+    s.emit({"type": "message_end", "content": "   "})
+    await manager._flush_persist(s)
+    assert await manager.get_messages(None, s.id) == []
+    manager._stop_persist_worker(s)
 
 
 async def test_finalize_done_empty_state(manager):

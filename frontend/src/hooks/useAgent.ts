@@ -419,6 +419,7 @@ export function useAgent(): AgentState {
       return;
     }
     try {
+      const beforeLen = (feedsRef.current[id] ?? []).length;
       const { messages } = await agentGetMessages(id, crawlerIdRef.current ?? undefined);
       const built = buildFeedFromMessages(messages);
       let feedItems = built.feed;
@@ -433,7 +434,10 @@ export function useAgent(): AgentState {
         feedItems = [...feedItems, { kind: "plan", plan: planVal }];
         planVal = null;
       }
-      feedsRef.current[id] = feedItems;
+      // 拉取历史期间新到达的实时事件(运行中会话会持续推送): 保留它们并追加到历史末尾,
+      // 避免历史覆盖导致运行中的过渡文本/工具卡片被清掉。
+      const liveDuring = (feedsRef.current[id] ?? []).slice(beforeLen);
+      feedsRef.current[id] = [...feedItems, ...liveDuring];
       plansRef.current[id] = planVal;
       todosRefs.current[id] = built.todos;
       savedRefs.current[id] = built.saved;
@@ -441,11 +445,6 @@ export function useAgent(): AgentState {
         statusRefs.current[id] = "done";
       }
       markSeen(crawlerIdRef.current, id, messages.length);
-      // 拉取历史期间新到达的实时事件(运行中会话会持续推送), 追加到历史末尾避免被覆盖丢失
-      const liveDuring = feedsRef.current[id] ?? [];
-      if (liveDuring.length > 0) {
-        feedsRef.current[id] = [...feedItems, ...liveDuring];
-      }
     } catch {
       /* 忽略历史加载失败 */
     }
