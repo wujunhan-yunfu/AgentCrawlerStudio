@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.types import Command
 
 from backend.services.agent.middleware import AgentEventMiddleware
@@ -143,3 +143,102 @@ async def test_awrap_model_call_error():
     with pytest.raises(RuntimeError):
         await mw.awrap_model_call(None, bad)
     assert "模型调用失败" in session.hub._buffer[-1]["content"]
+
+
+# ---------------------------------------------------------------- 过程叙述提醒
+
+
+def make_request(messages, system_text: str | None = "系统提示"):
+    from langchain.agents.middleware.types import ModelRequest
+    from langchain_core.messages import SystemMessage
+
+    return ModelRequest(
+        model=None,
+        messages=messages,
+        system_message=SystemMessage(content=system_text) if system_text else None,
+        state={"messages": messages},
+        runtime=None,
+    )
+
+
+async def test_narration_after_tool_result():
+    """工具结果返回后, 注入"先分析结果再继续"的临时系统提醒。"""
+    mw, _ = make_middleware()
+    messages = [
+        HumanMessage(content="采集数据"),
+        AIMessage(
+            content="先分析页面结构。",
+            tool_calls=[{"name": "page_analyze", "args": {}, "id": "1"}],
+        ),
+        ToolMessage(content="分析结果", tool_call_id="1"),
+    ]
+    req = make_request(messages)
+    out = mw._with_narration_reminder(req)
+    assert "过程叙述" in out.system_message.content
+    assert "工具结果" in out.system_message.content
+    # 原请求不被修改, 对话状态也不受影响
+    assert "过程叙述" not in req.system_message.content
+
+
+async def test_narration_silent_tool_turn():
+    """上一批工具调用没有可见文本时, 使用更强的提醒。"""
+    mw, _ = make_middleware()
+    messages = [
+        HumanMessage(content="采集数据"),
+        AIMessage(
+            content="", tool_calls=[{"name": "browser_run_code", "args": {}, "id": "1"}]
+        ),
+        ToolMessage(content="ok", tool_call_id="1"),
+    ]
+    out = mw._with_narration_reminder(make_request(messages))
+    assert "没有给用户任何说明" in out.system_message.content
+
+
+async def test_narration_no_reminder_for_user_turn():
+    mw, _ = make_middleware()
+    req = make_request([HumanMessage(content="你好")])
+    assert mw._with_narration_reminder(req) is req
+
+
+async def test_narration_without_system_message_prepends():
+    """无系统消息时, 临时系统提醒插到消息最前面, 不丢原有消息。"""
+    mw, _ = make_middleware()
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+        ToolMessage(content="ok", tool_call_id="1"),
+    ]
+    out = mw._with_narration_reminder(make_request(messages, system_text=None))
+    assert out.system_message is None
+    assert isinstance(out.messages[0], SystemMessage)
+    assert out.messages[1:] == messages
+
+
+async def test_narration_merges_system_message_in_messages():
+    """系统消息已在 messages 中时合并进去, 不再额外插入一条。"""
+    mw, _ = make_middleware()
+    messages = [
+        SystemMessage(content="系统提示"),
+        AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+        ToolMessage(content="ok", tool_call_id="1"),
+    ]
+    out = mw._with_narration_reminder(make_request(messages, system_text=None))
+    assert len(out.messages) == len(messages)
+    assert out.messages[0].content.startswith("系统提示")
+    assert "过程叙述" in out.messages[0].content
+
+
+async def test_awrap_model_call_injects_reminder():
+    mw, _ = make_middleware()
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}]),
+        ToolMessage(content="ok", tool_call_id="1"),
+    ]
+    req = make_request(messages)
+    seen = {}
+
+    async def handler(r):
+        seen["req"] = r
+        return SimpleNamespace()
+
+    await mw.awrap_model_call(req, handler)
+    assert "过程叙述" in seen["req"].system_message.content

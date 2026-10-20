@@ -3,6 +3,8 @@
 基于 langchain.agents.middleware.AgentMiddleware 实现:
 - aafter_model:  模型回复后推送 tool 调用 / message_end 事件
 - awrap_tool_call: 工具执行后推送 tool_result 事件
+- awrap_model_call: 在工具结果之后补一条"过程叙述"提醒, 引导模型先分析结果、再说明
+  下一次工具调用的意图(仅注入本次请求, 不写入对话状态)
 - abefore_agent / aafter_agent: 会话生命周期事件
 
 事件不承载大内容(均做了截断), 实时增量(token)由 runner 通过
@@ -19,7 +21,7 @@ from langchain.agents.middleware.types import (
     ModelRequest,
     ModelResponse,
 )
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
@@ -29,6 +31,19 @@ from .session.model import AgentSession
 
 _MAX_RESULT = 4000
 _MAX_ARGS = 1500
+
+# 过程叙述兜底: 在工具结果之后、以及模型跳过叙述直接调用工具时, 为本次请求临时补一条
+# 系统提醒。只注入本次请求, 不写入对话状态, 避免污染历史/持续占用上下文。
+_ANALYSIS_REMINDER = (
+    "\n\n[过程叙述] 你刚收到工具结果。请先用 1~2 句说明: 结果说明了什么、是否符合预期、"
+    "下一步怎么做; 若还要调用工具, 再说明本次操作的意图与目的。不要跳过分析直接连续调用工具。"
+)
+
+_SILENT_REMINDER = (
+    "\n\n[过程叙述] 你上一批工具调用前没有给用户任何说明。请先用 1~2 句自然语言分析上一步"
+    "工具结果(发现了什么/说明什么问题/下一步怎么做), 并在调用下一个工具前说明本次操作的"
+    "意图与目的; 只写有信息量的结论, 不写套话。"
+)
 
 
 class AgentEventMiddleware(AgentMiddleware[Any, Any, Any]):
@@ -118,6 +133,8 @@ class AgentEventMiddleware(AgentMiddleware[Any, Any, Any]):
         request: ModelRequest[Any],
         handler: Callable[[ModelRequest[Any]], Awaitable[ModelResponse[Any]]],
     ) -> ModelResponse[Any]:
+        # 工具结果之后 / 上一批调用无叙述时, 本次请求临时补一条过程叙述提醒
+        request = self._with_narration_reminder(request)
         # 非工具型思考中状态, 让前端显示"思考中"而不打断消息流
         self._session.emit({"type": "status", "content": "思考中..."})
         try:
@@ -125,3 +142,60 @@ class AgentEventMiddleware(AgentMiddleware[Any, Any, Any]):
         except Exception as exc:  # noqa: BLE001
             self._session.emit({"type": "status", "content": f"模型调用失败: {exc}"})
             raise
+
+    @staticmethod
+    def _tool_turn_was_silent(messages: list[Any]) -> bool:
+        """上一批工具调用是否完全没有可见文本(既未说明意图, 也未分析结果)。"""
+        idx = len(messages) - 1
+        # 工具结果之后: 回退到真正发起这批调用的 AIMessage
+        while idx >= 0 and isinstance(messages[idx], ToolMessage):
+            idx -= 1
+        if idx < 0:
+            return False
+        last = messages[idx]
+        if not isinstance(last, AIMessage) or not last.tool_calls:
+            return False
+        return not content_text(last.content).strip()
+
+    def _narration_reminder(self, messages: list[Any]) -> str | None:
+        """按对话当前位置给出过程叙述提醒(无需提醒时返回 None)。"""
+        if not messages:
+            return None
+        if isinstance(messages[-1], ToolMessage):
+            # 工具结果刚返回: 提醒模型先分析结果再决定下一步
+            return (
+                _SILENT_REMINDER
+                if self._tool_turn_was_silent(messages)
+                else _ANALYSIS_REMINDER
+            )
+        if self._tool_turn_was_silent(messages):
+            # 上一批调用没说明意图: 下次调用前补上叙述
+            return _SILENT_REMINDER
+        return None
+
+    def _with_narration_reminder(self, request: ModelRequest[Any]) -> ModelRequest[Any]:
+        """给工具执行过程补一条一次性系统提醒(不改动对话状态)。"""
+        if request is None:
+            return request
+        messages = list(getattr(request, "messages", None) or [])
+        reminder = self._narration_reminder(messages)
+        if not reminder:
+            return request
+        system_message = getattr(request, "system_message", None)
+        override = getattr(request, "override", None)
+        if override is None:
+            return request
+        if system_message is None:
+            # 无独立系统消息时, 优先合并进 messages 中已有的系统消息, 避免出现多条系统消息
+            for i, msg in enumerate(messages):
+                if isinstance(msg, SystemMessage):
+                    merged = list(messages)
+                    merged[i] = SystemMessage(
+                        content=(content_text(msg.content) + reminder).strip()
+                    )
+                    return override(messages=merged)
+            return override(
+                messages=[SystemMessage(content=reminder.strip())] + messages
+            )
+        text = content_text(getattr(system_message, "content", ""))
+        return override(system_message=SystemMessage(content=(text + reminder).strip()))
