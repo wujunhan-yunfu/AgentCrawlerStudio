@@ -3058,6 +3058,84 @@ button.primary {
   margin-top: 4px;
 }
 
+/* 自定义选项: 选中后启用输入框填写自己的答案 */
+.q-custom {
+  margin-top: 2px;
+}
+
+.q-custom-input {
+  display: block;
+  width: 100%;
+  margin: 4px 0 2px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--oc-text);
+  background: var(--oc-element);
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 4px;
+  outline: none;
+}
+
+.q-custom-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.q-custom-input:focus {
+  border-color: var(--oc-accent);
+}
+
+.q-custom-input.err {
+  border-color: var(--oc-error);
+}
+
+.q-error {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--oc-error);
+}
+
+/* 已回答的问卷: 问题 + 用户答案 */
+.answer-card {
+  border-color: var(--oc-success);
+  background: var(--oc-panel);
+}
+
+.answer-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.answer-item + .answer-item {
+  margin-top: 8px;
+}
+
+.answer-question {
+  font-size: 12px;
+  color: var(--oc-muted);
+  margin-bottom: 3px;
+}
+
+.answer-value {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--oc-text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.answer-value.muted {
+  color: var(--oc-muted);
+}
+
+.answer-check {
+  flex-shrink: 0;
+  color: var(--oc-success);
+}
+
 /* 登录引导表单 (page_login) */
 .login-card {
   border-color: var(--oc-accent);

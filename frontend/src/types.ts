@@ -42,7 +42,9 @@ export interface AgentQuestion {
   title: string;
   type: AgentQuestionType;
   options?: string[];
-  default?: string;
+  default?: string | string[];
+  /** 是否允许用户填写自定义答案(不传视为允许) */
+  allow_custom?: boolean;
 }
 
 export interface AgentLoginField {
@@ -157,6 +159,8 @@ export interface AgentFeedItem {
   saved?: AgentSavedItem[];
   id?: string;
   state?: "running" | "done" | "error";
+  /** ask_user 的回答: 问题与用户提交的答案, 以「问题 + 答案」卡片展示 */
+  answer?: { questions?: AgentQuestion[]; answers?: Record<string, unknown> };
   /** 一次 set_editor_code 的代码变更: 变更前 -> 变更后 */
   diff?: { from?: string; to?: string };
   /** 该轮对话产生的爬取规划(任务完成后展示在所属 AGENT 回答上方) */

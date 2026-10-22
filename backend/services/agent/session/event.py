@@ -23,6 +23,7 @@ PERSISTED_EVENT_TYPES = {
     "todos",
     "saved",
     "question",
+    "answer",
     "tool",
     "tool_result",
     "editor_code",

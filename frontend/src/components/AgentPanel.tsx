@@ -81,6 +81,11 @@ const TOOL_SPECS: Record<string, ToolSpec> = {
     icon: "%",
     summary: (a) => `${str(a?.method || "GET")} ${truncate(str(a?.url), 50)}`,
   },
+  api_request: {
+    icon: "%",
+    summary: (a) => `${str(a?.method || "GET")} ${truncate(str(a?.url), 50)}`,
+    meta: (a) => (a?.json_body ? "json" : a?.form && str(a.form) !== "{}" ? "form" : ""),
+  },
   record_plan: { icon: "✓", summary: () => t("agent.tool.recordPlan") },
   ask_user: { icon: "→", summary: () => t("agent.tool.askUser") },
   page_login: { icon: "🔐", summary: () => t("agent.tool.pageLogin") },
@@ -249,6 +254,9 @@ function FeedItem({ item }: { item: AgentFeedItem }) {
   }
   if (item.kind === "plan") {
     return <PlanCard plan={item.plan ?? null} />;
+  }
+  if (item.kind === "answer") {
+    return <AnswerCard item={item} />;
   }
   if (item.kind === "error") {
     return <div className="oc-message err">{item.content}</div>;
@@ -435,37 +443,154 @@ function TodoCard({ todos }: { todos: { content: string; status: "pending" | "in
   );
 }
 
+/** 把单个答案格式化成直白的文本: 数组用顿号连接, 布尔转是/否, 空值显示占位。 */
+function formatAnswer(value: unknown): string {
+  if (value === null || value === undefined) return t("agent.answer.empty");
+  if (Array.isArray(value)) {
+    const items = value
+      .map((v) => formatAnswer(v))
+      .filter((s) => s && s !== t("agent.answer.empty"));
+    return items.length ? items.join("、") : t("agent.answer.empty");
+  }
+  if (typeof value === "boolean") return value ? t("common.yes") : t("common.no");
+  if (typeof value === "object") return JSON.stringify(value);
+  const text = String(value).trim();
+  return text === "" ? t("agent.answer.empty") : text;
+}
+
+/** 已完成的问卷: 以「问题 + 用户答案」列表展示, 不显示工具返回的原始 JSON。 */
+function AnswerCard({ item }: { item: AgentFeedItem }) {
+  const { t } = useI18n();
+  const questions = item.answer?.questions ?? [];
+  const rawAnswers = item.answer?.answers;
+  const answers: Record<string, unknown> =
+    rawAnswers && typeof rawAnswers === "object" && !Array.isArray(rawAnswers)
+      ? (rawAnswers as Record<string, unknown>)
+      : {};
+  const rows: { title: string; value: unknown }[] = questions.map((q) => ({
+    title: q.title || q.key,
+    value: answers[q.key],
+  }));
+  const known = new Set(questions.map((q) => q.key));
+  for (const [key, value] of Object.entries(answers)) {
+    // _empty 是后端在用户未填写任何内容时的占位标记, 不作为答案展示
+    if (key === "_empty" || known.has(key)) continue;
+    rows.push({ title: key, value });
+  }
+  return (
+    <div className="agent-card answer-card">
+      <div className="agent-card-title">{t("agent.answer.title")}</div>
+      {rows.length ? (
+        <ol className="answer-list">
+          {rows.map((row, i) => (
+            <li key={i} className="answer-item">
+              <div className="answer-question">{i + 1}. {row.title}</div>
+              <div className="answer-value">
+                <span className="answer-check">✓</span>
+                <span>{formatAnswer(row.value)}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="answer-value muted">{t("agent.answer.empty")}</div>
+      )}
+    </div>
+  );
+}
+
 function QuestionForm({ questions, qid, onSubmit }: {
   questions: AgentQuestion[];
   qid: string | null;
   onSubmit: (answers: Record<string, unknown>) => void;
 }) {
   const { t } = useI18n();
+  // 单选/填空的答案
   const [values, setValues] = useState<Record<string, unknown>>({});
+  // 多选已勾选的候选选项(不含自定义答案)
   const [multi, setMulti] = useState<Record<string, string[]>>({});
+  // 自定义选项的输入内容与选中状态
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const [customOn, setCustomOn] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
 
   const setVal = (key: string, v: unknown) => setValues((prev) => ({ ...prev, [key]: v }));
+  const clearError = (key: string) =>
+    setErrors((prev) => (prev[key] ? { ...prev, [key]: false } : prev));
+  const setCustomOnFor = (key: string, on: boolean) => {
+    setCustomOn((prev) => ({ ...prev, [key]: on }));
+    clearError(key);
+  };
+  const setCustomText = (key: string, text: string) => {
+    setCustom((prev) => ({ ...prev, [key]: text }));
+    clearError(key);
+  };
+  // 选中自定义选项后离开输入框时校验: 答案不能为空(或只有空白字符)
+  const checkCustom = (key: string) => {
+    if (!(custom[key] ?? "").trim()) {
+      setErrors((prev) => ({ ...prev, [key]: true }));
+    }
+  };
+  // 选择类问题默认提供「自定义」选项, allow_custom 为 false 时关闭
+  const allowCustom = (q: AgentQuestion) => q.allow_custom !== false;
 
   useEffect(() => {
-    const defaults: Record<string, unknown> = {};
+    const v: Record<string, unknown> = {};
+    const m: Record<string, string[]> = {};
     for (const q of questions) {
       if (q.type === "multi") {
-        const pre = Array.isArray(q.default) ? (q.default as string[]) : [];
-        if (pre.length) defaults[q.key] = pre;
-      } else if (q.default !== undefined && q.default !== null && q.default !== "") {
-        defaults[q.key] = q.default;
+        m[q.key] = Array.isArray(q.default)
+          ? q.default.filter((x): x is string => typeof x === "string")
+          : [];
+      } else if (typeof q.default === "string" && q.default !== "") {
+        v[q.key] = q.default;
       }
     }
-    if (Object.keys(defaults).length) setValues((prev) => ({ ...defaults, ...prev }));
+    setValues(v);
+    setMulti(m);
+    setCustom({});
+    setCustomOn({});
+    setErrors({});
   }, [questions]);
 
   const handleSubmit = () => {
-    setBusy(true);
-    const answers: Record<string, unknown> = { ...values };
+    const answers: Record<string, unknown> = {};
+    const nextErrors: Record<string, boolean> = {};
+    let invalid = false;
     for (const q of questions) {
-      if (q.type === "multi") answers[q.key] = multi[q.key] ?? [];
+      const useCustom = allowCustom(q) && Boolean(customOn[q.key]);
+      if (q.type === "multi") {
+        const picked = [...(multi[q.key] ?? [])];
+        if (useCustom) {
+          const text = (custom[q.key] ?? "").trim();
+          if (!text) {
+            nextErrors[q.key] = true;
+            invalid = true;
+          } else {
+            picked.push(text);
+          }
+        }
+        answers[q.key] = picked;
+      } else if (q.type === "single") {
+        if (useCustom) {
+          const text = (custom[q.key] ?? "").trim();
+          if (!text) {
+            nextErrors[q.key] = true;
+            invalid = true;
+          }
+          answers[q.key] = text;
+        } else {
+          answers[q.key] = values[q.key] ?? (typeof q.default === "string" ? q.default : "");
+        }
+      } else {
+        answers[q.key] = (values[q.key] as string) ?? "";
+      }
     }
+    setErrors(nextErrors);
+    // 选中「自定义」但没填写(或只有空白字符)时阻止提交
+    if (invalid) return;
+    setBusy(true);
     onSubmit(answers);
     setTimeout(() => setBusy(false), 500);
   };
@@ -474,7 +599,7 @@ function QuestionForm({ questions, qid, onSubmit }: {
     <div className="agent-card question-card">
       <div className="agent-card-title">{t("agent.question.title")}</div>
       {questions.map((q, i) => {
-        const def = q.default ?? "";
+        const isCustom = allowCustom(q) && Boolean(customOn[q.key]);
         if (q.type === "text") {
           return (
             <div key={q.key} className="question-item">
@@ -493,24 +618,51 @@ function QuestionForm({ questions, qid, onSubmit }: {
             <div key={q.key} className="question-item">
               <div className="question-title">{i + 1}. {q.title} {t("agent.question.multi")}</div>
               {(q.options ?? []).map((opt) => {
-                const checked = (multi[q.key] ?? []).includes(opt);
+                const picked = multi[q.key] ?? [];
+                const checked = picked.includes(opt);
                 return (
                   <label key={opt} className="q-option">
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => {
-                        const cur = multi[q.key] ?? [];
-                        setMulti((prev) => ({
-                          ...prev,
-                          [q.key]: checked ? cur.filter((c) => c !== opt) : [...cur, opt],
-                        }));
-                      }}
+                      onChange={() =>
+                        setMulti((prev) => {
+                          const cur = prev[q.key] ?? [];
+                          return {
+                            ...prev,
+                            [q.key]: checked ? cur.filter((c) => c !== opt) : [...cur, opt],
+                          };
+                        })
+                      }
                     />
                     <span>{opt}</span>
                   </label>
                 );
               })}
+              {allowCustom(q) ? (
+                <div className={`q-custom${isCustom ? " on" : ""}`}>
+                  <label className="q-option">
+                    <input
+                      type="checkbox"
+                      checked={isCustom}
+                      onChange={() => setCustomOnFor(q.key, !isCustom)}
+                    />
+                    <span>{t("agent.question.custom")}</span>
+                  </label>
+                  <input
+                    type="text"
+                    className={`q-custom-input${errors[q.key] ? " err" : ""}`}
+                    disabled={!isCustom}
+                    value={custom[q.key] ?? ""}
+                    placeholder={t("agent.question.customPlaceholder")}
+                    onChange={(e) => setCustomText(q.key, e.target.value)}
+                    onBlur={() => {
+                      if (isCustom) checkCustom(q.key);
+                    }}
+                  />
+                </div>
+              ) : null}
+              {errors[q.key] ? <div className="q-error">{t("agent.question.customRequired")}</div> : null}
             </div>
           );
         }
@@ -522,12 +674,40 @@ function QuestionForm({ questions, qid, onSubmit }: {
                 <input
                   type="radio"
                   name={`q_${q.key}`}
-                  defaultChecked={opt === def}
-                  onChange={() => setVal(q.key, opt)}
+                  checked={!isCustom && values[q.key] === opt}
+                  onChange={() => {
+                    setCustomOnFor(q.key, false);
+                    setVal(q.key, opt);
+                  }}
                 />
                 <span>{opt}</span>
               </label>
             ))}
+            {allowCustom(q) ? (
+              <div className={`q-custom${isCustom ? " on" : ""}`}>
+                <label className="q-option">
+                  <input
+                    type="radio"
+                    name={`q_${q.key}`}
+                    checked={isCustom}
+                    onChange={() => setCustomOnFor(q.key, true)}
+                  />
+                  <span>{t("agent.question.custom")}</span>
+                </label>
+                <input
+                  type="text"
+                  className={`q-custom-input${errors[q.key] ? " err" : ""}`}
+                  disabled={!isCustom}
+                  value={custom[q.key] ?? ""}
+                  placeholder={t("agent.question.customPlaceholder")}
+                  onChange={(e) => setCustomText(q.key, e.target.value)}
+                  onBlur={() => {
+                    if (isCustom) checkCustom(q.key);
+                  }}
+                />
+              </div>
+            ) : null}
+            {errors[q.key] ? <div className="q-error">{t("agent.question.customRequired")}</div> : null}
           </div>
         );
       })}

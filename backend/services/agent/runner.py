@@ -754,6 +754,13 @@ class AgentManager:
             meta = {"saved": saved}
         elif etype == "question":
             meta = {"qid": event.get("qid"), "questions": event.get("questions")}
+        elif etype == "answer":
+            content = "用户已回答"
+            meta = {
+                "qid": event.get("qid"),
+                "questions": event.get("questions"),
+                "answers": event.get("answers"),
+            }
         elif etype == "tool":
             args = event.get("args", "") or ""
             content = args if isinstance(args, str) else str(args)

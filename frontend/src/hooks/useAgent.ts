@@ -59,6 +59,8 @@ interface AgentEvent {
   submit_label?: string;
   timeout?: number;
   ok?: boolean;
+  /** ask_user 的回答(回答事件) */
+  answers?: Record<string, unknown>;
 }
 
 export interface AgentState {
@@ -104,8 +106,8 @@ const EMPTY_SESSION_INFO = {
   last_message: "",
 };
 
-// 不在 feed 中展示的工具: 其产出已通过 plan / todos 等卡片呈现
-const HIDDEN_TOOL_NAMES = new Set(["write_todos"]);
+// 不在 feed 中展示的工具: 其产出已通过 plan / todos / answer 等卡片呈现
+const HIDDEN_TOOL_NAMES = new Set(["write_todos", "ask_user"]);
 
 // 未读消息标记的持久化: 关闭/刷新页面后仍能恢复「离开期间产生的未读角标」。
 // 按 crawler_id 隔离, 键前缀 + crawler_id 作为 localStorage key。
@@ -140,6 +142,7 @@ const ACTIVITY_TYPES = new Set([
   "todos",
   "saved",
   "question",
+  "answer",
   "editor_code",
   "login_request",
   "login_success",
@@ -147,6 +150,40 @@ const ACTIVITY_TYPES = new Set([
   "error",
   "session_end",
 ]);
+
+// 从 ask_user 工具入参(可能是 JSON 数组, 或 {"questions": ...} 包裹)解析问题列表
+function parseQuestionsArg(args?: string): AgentQuestion[] | null {
+  if (!args) return null;
+  try {
+    const v: unknown = JSON.parse(args);
+    if (Array.isArray(v)) return v as AgentQuestion[];
+    if (v && typeof v === "object") {
+      const inner = (v as Record<string, unknown>).questions;
+      if (Array.isArray(inner)) return inner as AgentQuestion[];
+      if (typeof inner === "string") {
+        const parsed: unknown = JSON.parse(inner);
+        if (Array.isArray(parsed)) return parsed as AgentQuestion[];
+        if (parsed && typeof parsed === "object") return [parsed as AgentQuestion];
+      }
+    }
+  } catch {
+    /* 入参不是合法 JSON: 无法重建问答卡片 */
+  }
+  return null;
+}
+
+// 从 "用户已确认: {json}" 形式的工具返回中解析答案(兼容旧会话)
+function parseAnswerContent(content?: string): Record<string, unknown> | null {
+  if (!content) return null;
+  const idx = content.indexOf("{");
+  if (idx < 0) return null;
+  try {
+    const v: unknown = JSON.parse(content.slice(idx));
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
 
 function buildFeedFromMessages(messages: AgentStoredMessage[]): {
   feed: AgentFeedItem[];
@@ -162,6 +199,9 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
   let lastCode: string | null = null;
   // 记录当前轮次产生的规划, 遇到该轮 AGENT 回答时在回答上方插入规划卡片
   let pendingPlan: AgentPlan | null = null;
+  // ask_user 的兜底: 旧会话没有 answer 事件, 用工具入参(问题)+ 工具返回(答案)重建问答卡片
+  let pendingAskUser: AgentQuestion[] | null = null;
+  let pendingAnswerEvent = false;
 
   const findTool = (id?: string, name?: string) => {
     if (id) {
@@ -209,6 +249,15 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
       pendingPlan = (meta.plan as AgentPlan) ?? null;
     } else if (m.type === "todos") {
       todos = (meta.todos as AgentTodo[]) ?? [];
+    } else if (m.type === "answer") {
+      pendingAnswerEvent = true;
+      feed.push({
+        kind: "answer",
+        answer: {
+          questions: (meta.questions as AgentQuestion[]) ?? [],
+          answers: (meta.answers as Record<string, unknown>) ?? {},
+        },
+      });
     } else if (m.type === "saved") {
       const items = (meta.saved as AgentSavedItem[]) ?? [];
       saved = [...saved, ...items];
@@ -219,7 +268,11 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
       });
     } else if (m.type === "tool") {
       const name = (meta.name as string) ?? "";
-      if (HIDDEN_TOOL_NAMES.has(name)) continue;
+      if (HIDDEN_TOOL_NAMES.has(name)) {
+        // ask_user 的问题在回答卡片中展示; 先记住入参, 供无 answer 事件的旧会话兜底
+        if (name === "ask_user") pendingAskUser = parseQuestionsArg(m.content);
+        continue;
+      }
       feed.push({
         kind: "tool",
         id: meta.id as string | undefined,
@@ -230,7 +283,21 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
     } else if (m.type === "tool_result") {
       const id = meta.id as string | undefined;
       const name = (meta.name as string) ?? "";
-      if (HIDDEN_TOOL_NAMES.has(name)) continue;
+      if (HIDDEN_TOOL_NAMES.has(name)) {
+        // 旧会话没有 answer 事件: 用问题入参 + 工具返回的答案重建问答卡片
+        if (name === "ask_user") {
+          const answers = parseAnswerContent(m.content);
+          if (answers && !pendingAnswerEvent) {
+            feed.push({
+              kind: "answer",
+              answer: { questions: pendingAskUser ?? [], answers },
+            });
+          }
+          pendingAskUser = null;
+          pendingAnswerEvent = false;
+        }
+        continue;
+      }
       const err = (meta.error as string) ?? "";
       const found = findTool(id, name);
       const patch = { state: err ? "error" : "done", content: normalizeTerm(m.content), error: err } as const;
@@ -581,6 +648,11 @@ export function useAgent(): AgentState {
     const info = sessionsRef.current[id];
     if (info) {
       statusRefs.current[id] = (info.status as AgentStatus) || "idle";
+      // 会话仍处于等待确认: 用服务端带回的问卷恢复输入区表单(刷新页面后仍可作答)
+      if (info.question?.questions?.length) {
+        questionsRefs.current[id] = info.question.questions;
+        qidRefs.current[id] = info.question.qid ?? null;
+      }
     }
     // 查看即清除未读角标
     unreadRefs.current = { ...unreadRefs.current, [id]: false };
@@ -748,6 +820,15 @@ export function useAgent(): AgentState {
           setQid(qidRefs.current[sid]);
         }
         setSessionStatus(sid, "waiting");
+        break;
+      }
+      case "answer": {
+        if (!sid) break;
+        flushStreaming(sid);
+        pushToFeed(sid, {
+          kind: "answer",
+          answer: { questions: msg.questions ?? [], answers: msg.answers ?? {} },
+        });
         break;
       }
       case "answer_received": {

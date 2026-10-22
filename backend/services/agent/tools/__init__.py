@@ -1,7 +1,7 @@
 """爬虫 Agent 工具集: 按职责拆分并统一组装。
 
 - browser.py:   浏览器控制(导航/分析/求值/截图/整体运行)
-- http.py:      HTTP 探测
+- http.py:      HTTP 探测(http_request)与通用接口调用(api_request)
 - save.py:      内容归档
 - planning.py:  规划与问卷
 - editor.py:    编辑器读写与临时调试

@@ -34,13 +34,14 @@ async def test_build_tools_returns_all():
     assert "browser_screenshot" in names
     assert "browser_run_code" in names
     assert "http_request" in names
+    assert "api_request" in names
     assert "get_editor_code" in names
     assert "debug_code" in names
     assert "set_editor_code" in names
     assert "detect_verification" in names
     assert "solve_verification" in names
     assert "verify_status" in names
-    assert len(tools) == 16
+    assert len(tools) == 17
 
 
 # --------------------------------------------------------------------------- build_agent

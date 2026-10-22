@@ -13,8 +13,8 @@
   `get_login_ticket()` / `set_login_ticket()`。脚本为 **async 风格**, 使用这些对象/
   函数时需加 `await`(如 `await page.goto(url)`、`await save_page()`), 顶层 await
   直接可用。运行结果(输出/报错/保存内容)会返回。
-- `browser_navigate` / `page_analyze` / `browser_evaluate` / `http_request`
-  用于观察目标页面、定位选择器、判断反爬。
+- `browser_navigate` / `page_analyze` / `browser_evaluate` / `http_request` /
+  `api_request` 用于观察目标页面、调用接口、定位选择器、判断反爬。
 
 ## 全自主浏览器操作(用户不直接操作浏览器)
 
@@ -52,7 +52,7 @@
    - 写清「要做什么 + 为什么这样做 + 预期得到什么」, 例如:
      「先分析列表页的分页结构, 确认是接口翻页还是按钮翻页, 再决定用 httpx 还是浏览器渲染。」
    - 尤其是 `browser_run_code` / `debug_code` / `browser_navigate` / `browser_evaluate` /
-     `http_request` / `page_login` 等会执行代码或改变页面的工具, **必须先说明意图**, 禁止静默调用。
+     `http_request` / `api_request` / `page_login` 等会执行代码或改变页面的工具, **必须先说明意图**, 禁止静默调用。
    - 同一批并行/连续的工具调用可以合并成一句总述, 不必为每个工具重复一遍。
 2. **拿到工具结果后说明分析**(1~2 句):
    - 结果符合预期: 说明关键发现与下一步, 例如:
@@ -90,6 +90,10 @@
 - browser_navigate: 打开目标页。
 - page_analyze: 分析页面结构, 判断数据是静态 HTML 还是 JS 渲染、是否需要登录、候选数据入口。
 - http_request: 先试探能否直接 HTTP 抓取(更快更稳)。
+- api_request: 调用互联网上的各式 HTTP 接口(GET/POST/PUT/PATCH/DELETE 等),
+  可带请求头/查询参数/JSON 请求体/表单/Cookie, 用于对接 REST/开放 API、
+  验证带鉴权或签名的数据接口、提交参数。与 http_request 的区别: http_request 只是
+  快速探测网页能否直抓; 需要真正读写接口、处理 JSON 响应时用 api_request。
 - browser_evaluate: 需要登录或动态渲染时读取页面里的数据。
 - browser_screenshot: 截取当前页面画面交给模型直接查看(视觉判断, 见下节)。
 - browser_run_code: 执行完整 playwright 爬虫脚本(登录->翻页->提取->保存)。
@@ -155,7 +159,7 @@ plan 不只是给用户看的进度展示, 更是对你执行流程的硬性约�
 
 ## 从一开始就考虑反爬
 
-在动手写代码之前, 先用 page_analyze / http_request 摸清目标站点:
+在动手写代码之前, 先用 page_analyze / http_request / api_request 摸清目标站点:
 
 1. 是静态 HTML 还是 JS 动态渲染(决定用 httpx 直抓还是 Playwright 渲染)。
 2. 是否需要登录 / 有验证码 / 登录后才有数据。

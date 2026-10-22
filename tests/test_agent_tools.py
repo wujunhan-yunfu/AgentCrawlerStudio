@@ -262,6 +262,138 @@ class _HeadersLike(dict):
     pass
 
 
+def test_api_request_json(monkeypatch):
+    from backend.services.agent.tools.http import build_http_tools
+
+    captured = {}
+
+    class FakeResp:
+        status_code = 201
+        reason_phrase = "Created"
+        url = "https://api.test/v1/items?page=1"
+        headers = _HeadersLike({"content-type": "application/json; charset=utf-8"})
+        request = _FakeRequest()
+        el = type("E", (), {"total_seconds": lambda self: 0.123})()
+        elapsed = el
+
+        def json(self):
+            return {"ok": True, "id": 7}
+
+    class FakeClient:
+        def __init__(self, **kw):
+            captured["client"] = kw
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            captured["method"] = method
+            captured["url"] = url
+            captured["kw"] = kw
+            return FakeResp()
+
+    import httpx as _httpx
+
+    monkeypatch.setattr(_httpx, "AsyncClient", FakeClient)
+    tools = {t.name: t for t in build_http_tools()}
+    out = asyncio_run(tools["api_request"].ainvoke({
+        "url": "https://api.test/v1/items", "method": "post",
+        "headers": '{"Authorization": "Bearer x"}',
+        "params": '{"page": 1}',
+        "json_body": '{"name": "n"}',
+        "timeout": 5,
+    }))
+    assert captured["method"] == "POST"
+    assert captured["kw"]["json"] == {"name": "n"}
+    assert captured["kw"]["headers"] == {"Authorization": "Bearer x"}
+    assert captured["kw"]["params"] == {"page": 1}
+    assert captured["client"]["timeout"] == 5
+    assert captured["client"]["follow_redirects"] is True
+    assert "状态码: 201 Created" in out
+    assert "耗时: 123 ms" in out
+    assert '"id": 7' in out
+
+
+def test_api_request_form_and_binary(monkeypatch):
+    from backend.services.agent.tools.http import build_http_tools
+
+    captured = {}
+
+    class FakeResp:
+        status_code = 200
+        reason_phrase = "OK"
+        url = "https://api.test/form"
+        headers = _HeadersLike({"content-type": "image/png"})
+        history = []
+        request = _FakeRequest()
+        elapsed = None
+        content = b"\x89PNG"
+
+        def json(self):
+            raise ValueError("not json")
+
+    class FakeClient:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            captured["kw"] = kw
+            return FakeResp()
+
+    import httpx as _httpx
+
+    monkeypatch.setattr(_httpx, "AsyncClient", FakeClient)
+    tools = {t.name: t for t in build_http_tools()}
+    out = asyncio_run(tools["api_request"].ainvoke({
+        "url": "https://api.test/form", "form": '{"a": 1, "b": "2"}'}))
+    assert captured["kw"]["data"] == {"a": "1", "b": "2"}
+    assert "二进制响应" in out
+    assert "4 字节" in out
+
+
+def test_api_request_errors(monkeypatch):
+    from backend.services.agent.tools.http import build_http_tools
+
+    tools = {t.name: t for t in build_http_tools()}
+
+    out = asyncio_run(tools["api_request"].ainvoke({"url": "https://a", "method": "trace"}))
+    assert "不支持的 method" in out
+
+    out = asyncio_run(tools["api_request"].ainvoke({"url": "ftp://a"}))
+    assert "http:// 或 https://" in out
+
+    out = asyncio_run(tools["api_request"].ainvoke({"url": "https://a", "headers": "[]"}))
+    assert "参数解析错误" in out
+
+    class BoomClient:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, *a, **kw):
+            raise RuntimeError("net down")
+
+    import httpx as _httpx
+
+    monkeypatch.setattr(_httpx, "AsyncClient", BoomClient)
+    out = asyncio_run(tools["api_request"].ainvoke({"url": "https://a"}))
+    assert "HTTP 接口请求失败: RuntimeError: net down" in out
+
+
 # --------------------------------------------------------------------------- save tools
 
 
@@ -396,6 +528,11 @@ def test_ask_user(monkeypatch, session):
         "questions": '[{"key":"q","title":"选择","type":"single","options":["a","b"]}]'}))
     assert "用户已确认" in out
     assert interrupted["payload"]["kind"] == "ask_user"
+    # 回答事件广播给前端(用于渲染问题+答案卡片)
+    answers_events = [e for e in session.hub._buffer if e.get("type") == "answer"]
+    assert answers_events
+    assert answers_events[-1]["answers"] == {"choice": "a"}
+    assert answers_events[-1]["questions"][0]["key"] == "q"
 
 
 def test_ask_user_invalid(monkeypatch, session):

@@ -55,7 +55,9 @@ def build_planning_tools(session: AgentSession) -> list:
 
         传入 JSON 数组, 每个元素: {"key": 唯一标识, "title": 问题描述,
         "type": "single"(单选) / "multi"(多选) / "text"(填空),
-        "options": [候选选项...], "default": 默认值(可选)}。
+        "options": [候选选项...], "default": 默认值(可选),
+        "allow_custom": 是否允许用户自定义答案(可选, 默认 true; 传 false 关闭)}。
+        选择类问题的答案可能不在 options 里(用户自定义), 请按语义理解。
         用户填写后返回其答案(JSON), 之后继续执行。
         仅在「多个方案无法抉择」「缺少完成任务必需的输入」或「被风控阻断需确认是否
         交付已生成结果」时才调用本工具。
@@ -76,6 +78,16 @@ def build_planning_tools(session: AgentSession) -> list:
             "questions": questions_data,
         }
         answers = interrupt(payload)
+        # 用户回答后广播一条回答事件: 前端据此以「问题 + 答案」卡片展示,
+        # 而不是把工具返回的原始 JSON 直接呈现给用户。
+        session.emit(
+            {
+                "type": "answer",
+                "qid": payload["qid"],
+                "questions": questions_data,
+                "answers": answers,
+            }
+        )
         return f"用户已确认: {json.dumps(answers, ensure_ascii=False)}"
 
     return [record_plan, ask_user]

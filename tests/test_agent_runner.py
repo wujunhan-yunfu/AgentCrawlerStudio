@@ -1035,6 +1035,7 @@ async def test_persist_event_branches(manager):
     await _persist({"type": "todos", "todos": [{"content": "a"}]})
     await _persist({"type": "saved", "saved": [{"id": "1"}]})
     await _persist({"type": "question", "qid": "q1", "questions": []})
+    await _persist({"type": "answer", "qid": "q1", "questions": [], "answers": {"a": 1}})
     await _persist({"type": "tool", "id": "t1", "name": "n", "args": "{}"})
     await _persist({"type": "tool_result", "id": "t1", "name": "n", "content": "c", "error": ""})
     await _persist({"type": "editor_code", "code": "print(1)", "base": ""})
@@ -1046,6 +1047,7 @@ async def test_persist_event_branches(manager):
     assert "status" in kinds and "error" in kinds
     assert "plan" in kinds and "todos" in kinds
     assert "saved" in kinds and "question" in kinds
+    assert "answer" in kinds
     assert "tool" in kinds and "tool_result" in kinds
     assert "editor_code" in kinds
     assert "login_request" in kinds and "login_success" in kinds and "login_action" in kinds
