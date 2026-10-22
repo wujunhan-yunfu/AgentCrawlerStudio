@@ -192,6 +192,24 @@ def test_browser_run_code_saved(session):
     assert "已保存 1 项" in out
 
 
+def test_browser_run_code_collapses_progress_frames(session):
+    from backend.services.agent.tools.browser import build_browser_tools
+
+    bridge = FakeBridge()
+    bridge.run_result = {
+        "ok": True,
+        "output": "\r抓取:   0%|  | 0/2\r抓取:  50%|# | 1/2\r抓取: 100%|##| 2/2\n结果: 2 条\n",
+        "error": "",
+        "saved": [],
+    }
+    tools = {t.name: t for t in build_browser_tools(session, bridge)}
+    out = asyncio_run(tools["browser_run_code"].ainvoke({"code": "x"}))
+    # 只保留 tqdm 最后一帧, 且最终结果可见
+    assert "抓取: 100%|##| 2/2" in out
+    assert "抓取:   0%" not in out
+    assert "结果: 2 条" in out
+
+
 # --------------------------------------------------------------------------- http tools
 
 
@@ -469,6 +487,27 @@ def test_debug_code(session, tmp_path, monkeypatch):
     out = asyncio_run(tools["debug_code"].ainvoke({"code": "print(1)", "filename": "dbg.py"}))
     assert "临时脚本" in out
     assert "ok=True" in out
+
+
+def test_debug_code_collapses_progress_frames(session, tmp_path, monkeypatch):
+    from backend.services.agent.core import fs as fsmod
+    from backend.services.agent.tools.editor import build_editor_tools
+
+    monkeypatch.setattr(fsmod, "AGENT_TMP_ROOT", tmp_path)
+    monkeypatch.setattr(fsmod.AGENT_BACKEND, "_root_dir", str(tmp_path), raising=False)
+
+    bridge = FakeBridge()
+    bridge.run_result = {
+        "ok": True,
+        "output": "\r翻页: 0/2\r翻页: 1/2\r翻页: 2/2\n完成\n",
+        "error": "",
+        "saved": [],
+    }
+    tools = {t.name: t for t in build_editor_tools(session, bridge, None)}
+    out = asyncio_run(tools["debug_code"].ainvoke({"code": "print(1)"}))
+    assert "翻页: 2/2" in out
+    assert "翻页: 0/2" not in out
+    assert "完成" in out
 
 
 def test_debug_code_write_failure(session, tmp_path, monkeypatch):

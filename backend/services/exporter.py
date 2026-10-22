@@ -827,6 +827,7 @@ uv run python main.py --validate-cron "0 8 * * *"
 保存的文件输出到 `output/` 目录。
 
 > 脚本 `import` 的第三方库会在导出时自动写入 `pyproject.toml` 的 dependencies。
+> 抓取进度建议用 `tqdm` 显示(循环/翻页/逐条请求), 导出时会自动把 `tqdm` 写入依赖。
 > 需要人工扫码 / 登录时请使用有头模式(`--no-headless`), 否则浏览器窗口不可见。
 '''
 

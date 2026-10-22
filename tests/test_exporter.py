@@ -64,6 +64,11 @@ def test_detect_dependencies_syntax_error():
     assert detect_dependencies("def (") == []
 
 
+def test_detect_dependencies_tqdm():
+    assert detect_dependencies("from tqdm.auto import tqdm") == ["tqdm"]
+    assert detect_dependencies("from tqdm.asyncio import tqdm_asyncio") == ["tqdm"]
+
+
 def test_build_package_appends_dependencies():
     _, data = build_package("import bs4\nfrom PIL import Image\n", name="demo")
     project = _zip(data).read("demo/pyproject.toml").decode()

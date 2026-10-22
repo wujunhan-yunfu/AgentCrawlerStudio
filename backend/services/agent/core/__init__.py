@@ -16,7 +16,7 @@ from .fs import (
     agent_virtual_path,
 )
 from .llm import build_chat_model, resolve_base_url
-from .text import cap_text
+from .text import cap_text, collapse_cr
 
 __all__ = [
     "AGENT_BACKEND",
@@ -29,4 +29,5 @@ __all__ = [
     "build_chat_model",
     "resolve_base_url",
     "cap_text",
+    "collapse_cr",
 ]

@@ -115,6 +115,20 @@ def test_cap_text():
     assert cap_text(None, 100) == "None"
 
 
+def test_collapse_cr():
+    from backend.services.agent.core.text import collapse_cr
+
+    # 无 \r 原样返回
+    assert collapse_cr("a\nb") == "a\nb"
+    # tqdm 风格: 每行只保留最后一帧
+    frames = "\r进度:   0%|  | 0/3\r进度:  50%|# | 1/3\r进度: 100%|##| 3/3\n结果: ok\n"
+    assert collapse_cr(frames) == "进度: 100%|##| 3/3\n结果: ok\n"
+    # CRLF 行不能被清空
+    assert collapse_cr("a\r\nb\r\n") == "a\nb\n"
+    # 非字符串入参
+    assert collapse_cr(None) == "None"
+
+
 def _cfg():
     from backend.config import Config
 

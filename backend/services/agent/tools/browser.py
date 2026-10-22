@@ -12,7 +12,7 @@ import json
 from langchain_core.tools import tool
 
 from ..core.fs import agent_sanitize
-from ..core.text import cap_text
+from ..core.text import cap_text, collapse_cr
 from ..session.model import AgentSession
 from ..bridge import BrowserBridge
 from ..login import LoginGate
@@ -213,8 +213,8 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         saved = result.get("saved") or []
         if saved:
             session.emit({"type": "saved", "saved": saved})
-        out = agent_sanitize(result.get("output") or "")
-        err = agent_sanitize(result.get("error") or "")
+        out = agent_sanitize(collapse_cr(result.get("output") or ""))
+        err = agent_sanitize(collapse_cr(result.get("error") or ""))
         parts = [f"ok={result.get('ok')}"]
         if out:
             parts.append(f"输出:\n{cap_text(out, 3000)}")

@@ -119,6 +119,7 @@
 
 - 采集任务: 把本次采集的完整脚本(登录→提取→保存)整理写回编辑器, 作为可复用资产。
 - 改代码任务: 把优化/修复后的最终代码写回编辑器。
+- 脚本里只要有循环/翻页/逐条请求, 就必须用 tqdm 显示进度(见「进度显示」), 交付前自检一遍。
 - 写回前先 `get_editor_code` 同步最新内容, 避免覆盖用户刚改的代码。
 - 最后用一段话总结: 完成了什么、数据规模、存到哪里、脚本怎么用、踩了什么坑。
 
@@ -520,6 +521,8 @@ await set_login_ticket(ticket={"cookies": core_cookies, "localStorage": ls}, hos
 5. 确认后用 `set_editor_code` 一次性把最终可用代码写回编辑器; 脚本归档用 `write_file`
    保存到虚拟文件系统; 抓取结果数据必须用脚本内的 save_page/save_content 保存
    (不是 Agent 的 archive_content 工具), 见下节。
+6. 交付脚本的循环/翻页必须带 tqdm 进度(见「进度显示」); `browser_run_code` / `debug_code`
+   的调试代码不需要 tqdm, 保持 print 精简输出。
 
 ## 人机验证: 产物脚本运行期(必须遵守)
 
@@ -579,6 +582,59 @@ browser_run_code 脚本里保存数据/凭据只能用内置函数, 不要自由
   上述数据规则用 JSON 保存或按用户要求处理。
 - 页面的原始 HTML 与解析后的数据视为两份不同的内容, 可各存一份(不算冗余); 但解析结果
   本身不要拆成多份不同格式保存。
+
+## 进度显示(交付脚本优先使用 tqdm, 硬性偏好)
+
+**作用范围: 只约束交付到编辑器的产物脚本。** `browser_run_code` / `debug_code` 里跑的临时验证
+代码**不需要 tqdm**, 保持精简 `print` 关键结果/断言即可(便于快速定位问题, 也避免进度帧淹没
+报错信息); 不要为了加进度条而增加调试代码的复杂度。
+
+交付脚本只要存在**循环 / 翻页 / 逐条请求**, **默认用 tqdm 显示进度**: 不要手写
+`print(f"{i}/{total}")` 之类的百分比输出, 也不要让长循环静默跑完。
+
+- 导入: 同步循环用 `from tqdm.auto import tqdm`; 异步迭代/并发用
+  `from tqdm.asyncio import tqdm_asyncio`。tqdm 已内置在代码执行环境, 直接 `import` 即可;
+  导出脚本时依赖会被自动写进 `pyproject.toml`, 不需要额外处理。
+- 同步逐条抓取:
+
+  ```python
+  for url in tqdm(urls, desc="抓取详情", unit="条", ncols=100):
+      data = await page.goto(url)
+      ...
+  ```
+
+- 已知/未知总页数:
+
+  ```python
+  with tqdm(total=total_pages, desc="翻页", unit="页", ncols=100) as bar:
+      for page_no in range(1, total_pages + 1):
+          ...
+          bar.update(1)
+
+  # 总页数未知: 不传 total, 边翻边计
+  with tqdm(desc="翻页", unit="页", ncols=100) as bar:
+      while url:
+          ...
+          bar.update(1)
+  ```
+
+- 异步迭代(httpx.AsyncClient / async generator / 并发抓取):
+
+  ```python
+  async for item in tqdm_asyncio(aiterable, total=n, desc="抓取详情", unit="条"):
+      ...
+  ```
+
+- 参数建议: `desc` 用简短中文说明当前动作; `unit` 用 `页` / `条` / `个`;
+  `ncols=80~100` 避免进度条过宽; 中间步骤 `leave=False`, 主进度 `leave=True`;
+  条数多时用 `mininterval=0.5` / `miniters` 降低刷新频率。
+- **禁止 `disable=True` / `disable=None`**: 前端输出面板与运行日志都支持 tqdm 的 `\r`
+  原地刷新, 禁用后用户完全看不到进度。
+- 循环内要打印关键信息(某条失败/跳过)时用 `tqdm.write(...)`, 不要直接 `print(...)`
+  (会把进度条打断成多行); 成功/失败统计用 `bar.set_postfix(ok=..., fail=...)`。
+- 嵌套循环只给外层加进度条, 内层保持安静(或 `leave=False` 且数量很少), 不要同时刷多条。
+- 进度条只负责展示: 不要把 bar 对象或进度文本写进 `save_content` 的数据, 进度也不影响
+  数据的筛选与落盘。
 
 ## 流程纪律(复杂任务)
 

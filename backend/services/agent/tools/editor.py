@@ -12,7 +12,7 @@ from ..core.fs import (
     agent_sanitize,
     agent_virtual_path,
 )
-from ..core.text import cap_text
+from ..core.text import cap_text, collapse_cr
 from ..session.model import AgentSession, EditorState
 from ..bridge import BrowserBridge
 from ..login import LoginGate
@@ -48,6 +48,7 @@ def build_editor_tools(
         通过输出/报错反复迭代; 确认跑通后再用 set_editor_code 一次性同步到编辑器。
         临时脚本不会影响前端编辑器内容。脚本为 async 风格, 使用 page/context/
         browser 及内置函数时需加 await(如 `await page.goto(url)`)。
+        调试片段输出保持精简(只 print 关键结果/断言即可), 不需要加进度条。
         Args:
             code: Python 源码字符串, 可直接使用内置浏览器对象与函数。
             filename: 可选临时脚本文件名(默认自动生成 debug_*.py)。
@@ -71,8 +72,8 @@ def build_editor_tools(
         saved = result.get("saved") or []
         if saved:
             session.emit({"type": "saved", "saved": saved})
-        out = agent_sanitize(result.get("output") or "")
-        err = agent_sanitize(result.get("error") or "")
+        out = agent_sanitize(collapse_cr(result.get("output") or ""))
+        err = agent_sanitize(collapse_cr(result.get("error") or ""))
         parts = [f"临时脚本: {vpath}", f"ok={result.get('ok')}"]
         if out:
             parts.append(f"输出:\n{cap_text(out, 3000)}")
