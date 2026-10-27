@@ -9,11 +9,11 @@
 无 ffmpeg 依赖 · 亚 20ms 端到端延迟 · 实时画面可直接鼠标/键盘远程操控 · 内置 Playwright / Pyright LSP / 源码版本管理 / 爬虫 Agent
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.141%2B-009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.150%2B-009688)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
 ![WebSocket](https://img.shields.io/badge/Transport-WebSocket-purple)
 ![No ffmpeg](https://img.shields.io/badge/No%20dependency-ffmpeg-red)
-![Tests](https://img.shields.io/badge/Tests-~660%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-~830%20passing-brightgreen)
 
 </div>
 
@@ -26,7 +26,8 @@
 - 内置 **Playwright 代码编辑器**（Monaco + Pyright LSP），可直接写脚本控制浏览器，执行过程 **stdout 流式回显**、可随时**停止执行**。
 - 内置 **DevTools 风格面板**（Console / Elements / Network / Application）。
 - 内置 **源码版本管理**：编辑器代码按 `crawler_id` 提交 / 历史 / 检出（MongoDB 持久化），未提交草稿自动三方合并。
-- 内置 **爬虫 Agent**（LangChain + DeepAgents），会话式多轮对话，自动编写并交付爬虫脚本。
+- 内置 **爬虫 Agent**（LangChain + DeepAgents），会话式多轮对话，自动编写并交付爬虫脚本；支持截图视觉判断与**人机验证自动处理**。
+- 支持 **`dev` / `login` / `run` 三种运行模式**：开发容器、只跑登录并保存凭据、以及无界面的定时/一次性执行 + webhook 回调，可直接被 K8s / 调度平台复用。
 
 ## 📑 目录
 
@@ -40,11 +41,13 @@
   - [前端开发模式](#前端开发模式)
   - [界面功能一览](#界面功能一览)
 - [⚙️ 配置参数](#️-配置参数)
+- [🧭 运行模式（dev / login / run）](#-运行模式dev--login--run)
 - [🔌 HTTP/WS 接口](#-httpws-接口)
 - [📖 使用指南](#-使用指南)
   - [Playwright 代码控制](#playwright-代码控制)
   - [爬虫编码器内置函数](#爬虫编码器内置函数)
   - [登录凭据复用](#登录凭据复用)
+  - [人机验证自动处理](#人机验证自动处理)
   - [浏览器远程控制](#浏览器远程控制)
   - [源码版本管理](#源码版本管理)
   - [导出脚本（独立运行包）](#导出脚本独立运行包)
@@ -69,8 +72,13 @@
 | **代码辅助** | black 格式化、isort 整理导入、auto-import 快速修复、inlay hints |
 | **源码版本管理** | 编辑器代码按 `crawler_id` 提交 / 历史 / 检出（MongoDB 持久化提交），未提交草稿存于浏览器 localStorage，刷新时与远端变更自动三方合并 |
 | **导出脚本** | 编辑器代码一键导出为可直接 `uv` 运行的独立工程 zip（pyproject.toml + README + main.py + runtime），不依赖 Xvfb，支持立即运行 / cron 定时运行与 cron 校验，可选无头 / 有头默认模式 |
-| **爬虫 Agent** | 会话式多轮对话，自动规划 → 调试 → 写回脚本，支持交互式登录 |
+| **爬虫 Agent** | 会话式多轮对话，自动规划 → 调试 → 写回脚本，支持交互式登录、截图视觉判断与过程叙述 |
 | **登录凭据复用** | ticket 按 host + crawler_id 存 MongoDB，登录一次自动复用 |
+| **三种运行模式** | `dev` 完整 IDE；`login` 只自动执行 Mongo HEAD 代码到「登录成功并保存凭据」；`run` 不启动 Web 服务，一次性 / cron 定时执行并回调 webhook |
+| **人机验证自动处理** | 滑块（含缺口）/ 「我是真人」勾选框 / 图片点选：开发期用 `detect_verification` / `solve_verification` 判型求解，产物脚本用 `verify_check` 运行期自动过验（不弹窗、限次未过即结束运行） |
+| **视觉判断** | Agent 工具 `browser_screenshot` 截取当前页面并作为图片交给多模态主模型直接查看，DOM/文本无法判断时用「眼睛」确认 |
+| **主题与界面语言** | 浅色 / 深色 / 跟随系统主题，中文 / English 界面一键切换 |
+| **结果下载** | 输出栏「已保存内容」支持直接下载本次运行保存的 HTML / JSON / CSV / 图片等产物 |
 
 ## 🖼️ 界面预览
 
@@ -99,7 +107,7 @@
 - **Xvfb**：虚拟显示器 `:99`（1280x800x24），供有头 Chrome 渲染。
 - **Chrome**：有头模式运行，**真实浏览器窗口（含标签栏 / 地址栏）**显示在画面上，无 URL 参数、落在默认空白页。导航 / 远程操控 / 实时画面 / DevTools 面板共用**同一个常驻浏览器**（全新临时 `--user-data-dir` 配置，非无痕模式——无痕下 CDP 的 Cookie API 会失效）；每次 `POST /run` 执行代码时自动重启**全新浏览器**（重新分配临时配置目录与 CDP 端口），`--remote-debugging-port` 暴露 CDP 供 Playwright 与各通道控制，不残留历史记录 / Cookie。
 - **抓屏**：Pillow `ImageGrab` 直接读虚拟屏 → JPEG 编码，**不经过 ffmpeg**；抓屏跑在后端 asyncio 后台任务中，单帧抓取 / 编码放入默认执行器（`asyncio.to_thread`），事件循环始终空闲。
-- **FastAPI**：全异步（async/await）实现，**无线程**——所有接口与 WebSocket 均不阻塞事件循环；独立 asyncio 抓屏任务按 30fps 连续抓屏编码，WebSocket 只推送最新帧。实时画面 `/ws/live` 为**单窗口独占**：同一时刻仅一个连接，新窗口连入先收到 `conflict`，由客户端决定取消或 `kick` 接管原连接（同页刷新静默接管）。
+- **FastAPI**：全异步（async/await）实现，**无线程**——所有接口与 WebSocket 均不阻塞事件循环；独立 asyncio 抓屏任务按 30fps 连续抓屏编码，WebSocket 只推送最新帧。实时画面 `/ws/live` 为**单窗口独占**：同一时刻仅一个连接，新窗口连入先收到 `conflict`，由客户端决定取消或 `kick` 接管原连接（同页刷新静默接管）。按 `--mode` 只挂载对应路由：`dev` 全部；`login` 仅控制台 + 实时画面/DevTools 流 + 模式/登录状态；`run` 不构建 Web 应用，直接进入 CLI 执行器。所有 Web 模式都提供 `GET /healthz` 就绪探针。
 - **远程操控**：实时画面放大后是一层覆盖物，把鼠标 / 滚轮 / 键盘 / 中文输入事件通过 `/ws/input` 送到后端，后端用 **CDP Input 域**注入到常驻浏览器（坐标自动换算去掉浏览器顶栏偏移）。
 - **全异步依赖**：浏览器控制走 **Playwright async API**，网络请求走 `httpx` async client，MongoDB 走 **motor** 异步驱动，LSP 桥接走 `asyncio.create_subprocess_exec` + 异步 stdio。
 - **代码执行**：`POST /run` 以 **SSE 流式**回传（`start → stdout… → done`，空闲时 `heartbeat`），脚本中的 `print` 实时逐行推送到页面，客户端可随时中止请求实现**停止执行**；脚本在 worker 线程 + 独立事件循环中运行，不阻塞事件循环。
@@ -151,6 +159,8 @@ uv run python -m backend.main
 
 > 所有 API/WS 接口均挂在可配置前缀下，默认 **`/api/v1`**（如 `/api/v1/status`、`/api/v1/ws/live`），仅网页控制台 `GET /` 例外。API/WS 前缀通过 `--api-prefix` 或环境变量 `API_PREFIX` 修改，前端页面会从后端注入的 `acs-api-prefix` meta 自动读取该前缀发起请求（无需重新构建）。网页控制台入口与静态资源的前缀通过 `--web-prefix` 或环境变量 `WEB_PREFIX` 修改（默认 `/`，子路径部署时设为如 `/studio`）：此时网页、静态资源、API 与 WS 一起挂在 `/studio` 下（如 `/studio/api/v1/status`、`/studio/api/v1/ws/live`），前端会自动带上该前缀（meta 中的前缀已包含 `web_prefix`），可同时适配「反向代理保留/剥离子路径」两种方式；裸 `/api/v1` 仍保留可用（兼容旧脚本/探针）。
 
+> 以上命令默认以 `dev` 模式启动完整 IDE；`login` / `run` 模式（自动登录、定时/一次性执行 + webhook）见[运行模式](#-运行模式dev--login--run)。
+
 ### 前端开发模式
 
 前端为 React + Vite，代码编辑器基于 monaco-editor/react + monaco-languageclient，通过 WebSocket 桥接后端启动的 **pyright 语言服务器**，构建产物输出到 `static/`。
@@ -177,20 +187,24 @@ backend/
 │   ├── storage.py   #   StorageChannel: Local/Session Storage/Cookies/IndexedDB
 │   ├── code_version.py # CodeStore: 编辑器代码提交快照(MongoDB, 按 crawler_id)
 │   ├── lsp.py       #   LspManager / LspSession: 浏览器 WebSocket <-> pyright 子进程桥接
-│   ├── crawler.py   #   代码执行环境注入的爬虫默认函数(save_page/save_content/登录凭据等)
+│   ├── crawler.py   #   代码执行环境注入的爬虫默认函数(save_page/save_content/登录凭据/verify_check 等)
 │   ├── sandbox.py   #   受限沙箱 safe_builtins: 禁 open/os/pathlib/shutil/subprocess 等
 │   ├── save.py      #   save_content 多格式序列化(txt/json/jsonl/csv/img)与字节截断
 │   ├── cron.py      #   cron 表达式校验与下次运行时间(纯标准库, 导出包内复用同一份源码)
 │   ├── exporter.py  #   导出独立运行包: 组装 uv 工程 zip(pyproject.toml/README/main/runtime/crawler)
+│   ├── runmode/     #   运行模式: login_mode(自动登录到凭据保存) run_mode(once/cron 执行器)
+│   │                #   runtime(独立 Playwright 运行环境) webhook/heartbeat/data_webhook(回调/心跳/数据推送)
 │   └── agent/       #   爬虫 Agent: agent(create_deep_agent) runner(会话编排/事件持久化)
 │                      #   core/(LLM + 虚拟文件系统) session/(store/event/model) tools/(浏览器/HTTP/
-│                      #   编辑器/规划/保存) login + run_login(登录闸口) middleware prompts checkpointer
+│                      #   编辑器/规划/保存/人机验证) verify/(证据采集/判型/求解) login + run_login
+│                      #   (登录闸口) middleware prompts checkpointer
 └── routers/         # 路由层: HTTP/WS 接口定义
     ├── console.py   #   GET /
     ├── control.py   #   /status /pages /navigate /screenshot /run(SSE) /restart /console/* /network/* /dom/* /storage/* /format /organize-imports
     ├── input.py     #   /ws/input (远程操控双向 WebSocket)
     ├── versions.py  #   /code/repo /code/commit /code/commits /code/checkout (源码版本)
     ├── export.py    #   /code/validate-cron /code/export (cron 校验 + 导出独立运行包)
+    ├── runmode.py   #   /mode /login/status (运行模式信息 + login 模式状态)
     ├── lsp.py       #   /ws/lsp WebSocket + /lsp/info
     ├── stream.py    #   /ws/live + /ws/console + /ws/network + /ws/dom + /ws/storage + /live.mjpg
     └── agent.py     #   Agent 会话管理 / 多轮对话 / 问卷 / 登录 / /ws/agent / /editor/code
@@ -207,13 +221,14 @@ backend/
   - **工具**：对当前页面 **截图**（PNG 预览）、**重启推流**（重启 Xvfb + Chrome + 抓屏整条链路）；
   - **爬虫 Agent**：会话式多轮对话智能体面板（详见下文）；
   - **源码管理**：代码 提交 / 历史 / 检出 面板（详见下文）。
+- **主题与界面语言**：活动栏底部**齿轮菜单**可切换 **浅色 / 深色 / 跟随系统** 主题，以及 **中文 / English** 界面语言（分别记忆在本地）。
 - **代码检查与编码辅助（LSP）**：编辑器内联 **pyright**（以 `.venv/bin/python` 为分析核心，等价 Pylance 的推理精度）——后端 `/api/v1/ws/lsp` 桥接 pyright 子进程，提供准确的类型推断、`对象.` 补全 / 悬停 / 签名提示、定义 / 引用跳转与静态检查；`page` / `context` / `browser` 三个注入全局由后端桩模块解析，不会误报未定义。
 - **Pylance 风格编码辅助**：内置 **inlay hints（参数名提示）**，调用已知 API 时在位置实参前显示参数名，关键字实参自动跳过；语义高亮区分 **变量 / 参数** 两种 token。
 - **代码快速修复（auto-import）**：当诊断报"未定义 `X`"且 `X` 命中类库索引时，编辑器小灯泡（💡）提供 "添加 import" 快速修复。
 - **整理导入**：`Shift+Alt+O` 或底部输出栏的 **"整理导入"** 按钮，调用后端 isort 排序 / 分组导入语句。
 - **问题栏（VSCode 风格）**：底部输出栏的 **"问题"** 标签页展示 pyright 检查结果（错误 / 警告计数、点击跳转），编辑器内同时有对应波浪线标注。
 - **Python 代码美化**：`Shift+Alt+F` 或 **"格式化代码"** 按钮，调用后端 **black** 一键美化。
-- **执行与输出（终端风格流式）**：输出栏 **"输出"** 标签页实时展示运行日志——每行带时间戳、未结束的半个行带闪烁光标、执行开始 / 结束用样式化标记（▶/✓/✗ + 耗时），出错时红色显示；结束后下方列出**已保存内容**（点击展开查看路径 / 内容详情）。输出栏高度可拖动其上边缘或左角调整。
+- **执行与输出（终端风格流式）**：输出栏 **"输出"** 标签页实时展示运行日志——每行带时间戳、未结束的半个行带闪烁光标、执行开始 / 结束用样式化标记（▶/✓/✗ + 耗时），出错时红色显示；`tqdm` 进度条在同一行原地刷新。结束后下方列出**已保存内容**（点击展开查看路径 / 内容详情，也可直接**下载**保存的文件）。输出栏高度可拖动其上边缘或左角调整。
 - **交互式登录浮窗**：独立运行（输出栏执行代码）的脚本调用 `page_login` 后，页面弹出可拖动的登录卡片（二维码登录自动**放大实时画面**便于扫码，提供"已完成扫码，继续 / 刷新二维码"；账密 / 短信验证码表单含"发送验证码"倒计时等），提交后脚本自动恢复执行。
 - **悬浮实时画面（远程操控）**：右上角悬浮 **真实 Chrome 窗口**（含顶栏），毫秒级延迟、**始终置顶**；默认缩在右上角（高度 ≤ 页面高度的 1/4，点击放大），无活跃浏览器时显示默认 logo：
   - **点击放大**后居中悬浮、背景压暗，变成**远程操控台**：鼠标移动 / 点击 / 拖拽 / 滚轮滚动 / 键盘输入直接操作真实浏览器；可直接在画面内键入**中文（IME）**，或用底部文本输入框发送整段文本（支持输入法实时预览、Enter 发送）；
@@ -253,13 +268,94 @@ backend/
 | `--max-items` | `MAX_ITEMS` | `50` | 开发模式下 `save_content` / `limit_items` 对列表/迭代的最大条数 |
 | `--max-bytes` | `MAX_BYTES` | `524288`（512KB） | 开发模式单次保存（`save_content` 文本 / `save_page` HTML）的最大字节数 |
 
+**人机验证处理**（默认开启）：
+
+| 参数 | 环境变量 | 默认值 | 说明 |
+|------|----------|--------|------|
+| `--verify-enabled` / `--no-verify-enabled` | `VERIFY_ENABLED` | `1`（开启） | 人机验证处理开关（状态随 `verify_status` 暴露；自动过验链默认启用） |
+| `--verify-max-attempts` | `VERIFY_MAX_ATTEMPTS` | `3` | 单次验证触发的自动尝试上限（超限抛 `VerificationFailed` 结束本次运行） |
+| `--verify-slider-only-right` / `--no-verify-slider-only-right` | `VERIFY_SLIDER_ONLY_RIGHT` | `1` | 无缺口纯滑块优先拖到最右 |
+| `--verify-vision-provider` | `VERIFY_VISION_PROVIDER` | 空 | 多模态模型 provider（类型判定 / 图片点选共用，留空复用主模型配置） |
+| `--verify-vision-model` | `VERIFY_VISION_MODEL` | 空 | 看图模型名（留空则按规则判定） |
+| `--verify-vision-base-url` | `VERIFY_VISION_BASE_URL` | 空 | 多模态模型兼容网关 base URL |
+| `--verify-rule-fallback` / `--no-verify-rule-fallback` | `VERIFY_RULE_FALLBACK` | `1` | 没有视觉模型时允许规则「强命中」兜底判定 |
+| `--no-verify-runtime-exit` | `VERIFY_RUNTIME_EXIT` | 开启 | 产物运行期自动解超限时**不**结束本次运行（仅调试用，仍不弹窗） |
+
+**运行模式（CDC 编排）**：
+
+| 参数 | 环境变量 | 默认值 | 说明 |
+|------|----------|--------|------|
+| `--mode` | `MODE` | `dev` | 运行模式：`dev` 完整 IDE / `login` 只跑登录 / `run` 无界面执行器 |
+| `--run-type` | `RUN_TYPE` | `once` | `run` 模式：`once` 一次性 / `cron` 定时 |
+| `--cron` | `CRON` | 空 | `run` 模式的 cron 表达式（`--run-type cron` 时必填） |
+| `--run-id` | `RUN_ID` | 空 | 本次运行 ID（CDC 生成，随 webhook 回传；留空自动生成） |
+| `--webhook-url` | `WEBHOOK_URL` | 空 | 运行事件回调地址（为空则不发送） |
+| `--webhook-secret` | `WEBHOOK_SECRET` | 空 | webhook HMAC 签名密钥 |
+| `--heartbeat-url` | `HEARTBEAT_URL` | 由 webhook 推导 | cron 常驻进程心跳地址（默认同源 `/heartbeat`） |
+| `--heartbeat-interval` | `HEARTBEAT_INTERVAL` | `30` | 心跳间隔（秒），仅 `run` + `cron` 生效 |
+| `--data-webhook-url` | `DATA_WEBHOOK_URL` | 由 webhook 推导 | 爬取数据推送地址（`save_content` 逐条推送；为空则关闭） |
+| `--data-inline-max-bytes` | `DATA_INLINE_MAX_BYTES` | `1048576` | 数据内联阈值（超过预留预签名直传） |
+| `--data-webhook-sync` / `--no-data-webhook-sync` | `DATA_WEBHOOK_SYNC` | 关闭（异步） | `save_content` 是否同步等待 CDC 确认 |
+| `--login-timeout` | `LOGIN_TIMEOUT` | `300` | `login` 模式总超时（秒） |
+| `--source` | `SOURCE` | `editor` | 代码来源标记（当前 `login` / `run` 固定读取 Mongo HEAD） |
+| `--headless` / `--no-headless` | `HEADLESS` | 按模式（`run` 默认无头） | 无头模式运行 |
+| `--serve` / `--no-serve` | `SERVE` | 关闭 | `login` 模式的实时画面服务标记（CDC 编排用，随 `/mode` 返回） |
+
 **带宽参考**（1280x800）：`--quality 70` 约 3~5 Mbps。带宽紧张可降低 `--quality` 或分辨率。
+
+## 🧭 运行模式（dev / login / run）
+
+同一份代码 / 镜像通过 `--mode`（或环境变量 `MODE`）切换用途，便于被 K8s / 调度平台分别当作**开发容器 / 登录容器 / 运行容器**复用：
+
+| 模式 | Web 服务 | 行为 |
+|------|----------|------|
+| `dev`（默认） | 完整 IDE | 挂载全部路由：编辑器 / Agent / 版本管理 / 导出 / DevTools / 实时画面 |
+| `login` | 精简控制台 | 启动后自动读取 MongoDB 中当前 `crawler_id` 的 **HEAD 代码**并运行，只挂载控制台 + 实时画面/DevTools 流 + 模式/登录状态接口；运行到 `set_login_ticket` 成功保存凭据即结束 |
+| `run` | 不启动（CLI） | 直接执行 Mongo HEAD 代码（一次性 / cron 定时），默认无头，通过 webhook 回传运行事件与爬取数据 |
+
+所有 Web 模式（`dev` / `login`）都提供 `GET /healthz` 就绪探针：仅当 Xvfb / Chrome / CDP 就绪时返回 `ok: true`，可直接用于 K8s probe。
+
+### login 模式
+
+```bash
+MODE=login uv run python -m backend.main \
+  --crawler-id demo --login-timeout 300      # --serve 标记 CDC 场景(随 /mode 返回)
+curl http://127.0.0.1:8080/api/v1/login/status
+```
+
+- `GET /login/status` 返回 `status`（`pending` / `running` / `succeeded` / `failed`）、`error`、`run_id`、起止时间，供 CDC 轮询判定；
+- **结束判定**：脚本内任意一次 `set_login_ticket(...)` 保存成功即触发 `LoginComplete`，本次登录运行直接结束（不会继续执行后续爬取逻辑）；脚本正常结束但未保存凭据记为 `login_not_saved`，超时记为失败；
+- 交互式登录沿用 `/run` 的登录链路（`RunLoginManager` + `page_login`）：CDC 可内嵌实时画面，用户在其中扫码 / 观察登录过程，扫码成功由页面跳转自动判定并继续；当前 `crawler_id` 在 Mongo 中没有 HEAD 提交时直接失败并给出原因。
+
+### run 模式
+
+```bash
+# 一次性运行(无头, 运行事件回调 CDC)
+MODE=run RUN_TYPE=once CRAWLER_ID=demo \
+WEBHOOK_URL=https://cdc.example.com/api/v1/webhooks/runs WEBHOOK_SECRET=xxx \
+uv run python -m backend.main
+
+# 定时运行(cron + 心跳 + save_content 数据逐条推送)
+MODE=run RUN_TYPE=cron CRON="*/10 * * * *" CRAWLER_ID=demo \
+WEBHOOK_URL=https://cdc.example.com/api/v1/webhooks/runs \
+DATA_WEBHOOK_URL=https://cdc.example.com/api/v1/webhooks/data \
+uv run python -m backend.main
+```
+
+- **代码来源**：始终读取当前 `crawler_id` 的 Mongo HEAD 提交；没有可用提交或 Mongo 不可达时退出码 `2` 并回调 `run.failed`（`error.type=no_code`）；
+- **运行事件**：`run.started` / `run.succeeded` / `run.failed`；登录失败、人机验证超限分别归类为 `login_failed` / `verification_failed`，其余为 `code_error`；
+- **webhook 协议**：JSON body + `X-Webhook-Event` / `X-Webhook-Delivery` / `X-Webhook-Timestamp` / `X-Webhook-Signature`（`sha256=HMAC_SHA256(secret, timestamp + "." + body)`），失败按指数退避重试；
+- **数据推送**：开启数据 webhook 后，脚本每次 `save_content(...)` 都会推送一条 `data.saved`（默认异步有界队列；`--data-webhook-sync` 可改为同步等待确认），运行结束事件在数据队列 flush 后发送；
+- **心跳**：`cron` 常驻进程按 `--heartbeat-interval` 周期上报进程状态、`next_run_at` / `last_run` / health，进程退出前发送 `stopping`；
+- **模式差异**：默认无头（需要人工登录时用 `--no-headless`）；`page_login` 不弹前端登录框，只在终端打印扫码 / 登录提示并轮询页面跳转；
+- **退出码**：`0` 成功 / `1` 运行失败 / `2` 无代码或 cron 表达式非法 / `130` 收到中断。
 
 ## 🔌 HTTP/WS 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/`（默认；设 `--web-prefix` 后为 `/{web-prefix}` 及 `/{web-prefix}/`） | 网页控制台（静态资源在 `/assets` 与 `/{web-prefix}/assets`） |
+| GET | `/healthz` | 就绪探针：Xvfb / Chrome / CDP 就绪时返回 `ok: true`（含 `mode` / `crawler_id`），供 K8s probe / CDC 判定 |
 | WS  | `/api/v1/ws/live` | 实时画面 WebSocket（**单窗口独占**：第二窗口收到 `conflict`，可回 `kick` 接管原连接；同页刷新 `?client_id=` 相同则静默接管）。二进制帧 = float64 时间戳 + JPEG；控制消息 `hello` / `conflict` / `kicked` |
 | WS  | `/api/v1/ws/input` | 远程操控双向 WebSocket：客户端上报 鼠标(`move/down/up/wheel`) / 键盘(`down/up/char`) / 触控 / 文本(`insert/compose/commit`) 事件，后端经 CDP Input 注入浏览器；返回 `hello {viewport,offset,enabled}` / `ok` / `disabled` / `error` |
 | GET | `/api/v1/live.mjpg` | MJPEG 兼容接口(兼容旧 `<img>` 播放, 不受单窗口限制) |
@@ -280,6 +376,8 @@ backend/
 | POST | `/api/v1/storage/cookie/set` / `/delete` | 设置/删除 Cookie |
 | POST | `/api/v1/storage/idb/databases` / `stores` / `data` | IndexedDB 数据库/对象仓库/数据浏览 |
 | GET | `/api/v1/status` | 进程/抓屏/页面状态 JSON |
+| GET | `/api/v1/mode` | 当前运行模式 / `crawler_id` / `serve` 标记（供 CDC 感知模式） |
+| GET | `/api/v1/login/status` | `login` 模式运行状态（`pending` / `running` / `succeeded` / `failed` + 错误与起止时间） |
 | GET | `/api/v1/pages` | 当前打开的标签页列表 |
 | POST | `/api/v1/navigate` | 导航常驻浏览器 `{"url":"...","new_page":bool}` |
 | POST | `/api/v1/screenshot` | 返回当前页面 PNG 截图 |
@@ -346,6 +444,8 @@ for link in soup.select("a[href]"):
     print(link.get("href"))
 ```
 
+脚本里只要有**循环 / 翻页 / 逐条请求**，建议用 `tqdm` 显示进度（同步 `from tqdm.auto import tqdm`，异步 `from tqdm.asyncio import tqdm_asyncio`），输出栏与 Agent 调试结果都能原地刷新进度条；`tqdm` 已内置在执行环境与导出包中，无需额外安装。
+
 ### 爬虫编码器内置函数
 
 代码执行环境额外内置以下函数（后端 LSP 桩模块同步提供补全/签名/悬停提示），每次运行代码前会**清空上一轮保存的内容**：
@@ -357,9 +457,11 @@ for link in soup.select("a[href]"):
 | `limit_items(data, n=None)` | 开发测试模式限制遍历长度：列表/元组取前 `n` 条（默认 `max_items`），迭代器/生成器走 `islice` 惰性截取；生产模式原样返回 |
 | `get_login_ticket(host)` | 从 MongoDB 读取指定 `host` 下储存的 ticket 并原样返回，未找到返回 `None`；**只负责读取，不做任何处理**，ticket 的获取与如何使用由用户脚本自行实现（用 playwright 对象直接注入） |
 | `set_login_ticket(ticket, host)` | 将 `ticket` 值直接储存在指定的 `host` 下（不存在则新建，关联当前 `crawler_id`）；**只负责存储，不做任何处理**，返回写入的 `ticket` |
-| `page_login(method, ...)` | 交互式登录（**需在爬虫 Agent 会话或独立运行 `/run` 脚本中调用**，脚本会暂停并弹出登录框等待用户）：`method` **必填，必须显式指定** `qr`（扫码）/ `account`（账密）/ `sms`（验证码），**不支持 `auto`**；返回 `{"ok","method","url","error"}`。**仅负责唤起用户登录，不保存凭据** |
+| `page_login(method, ...)` | 交互式登录（**需在爬虫 Agent 会话、独立运行 `/run` 脚本或 `login` 模式中调用**，脚本会暂停并等待用户完成登录）：`method` **必填，必须显式指定** `qr`（扫码）/ `account`（账密）/ `sms`（验证码），**不支持 `auto`**；返回 `{"ok","method","url","error"}`。**仅负责唤起用户登录，不保存凭据** |
 | `capture_login_state()` | 读取浏览器 cookies / localStorage / sessionStorage 返回完整快照，附带 `credentials` 字段分类鉴权凭据（token/jwt 等） |
 | `restore_login_state(state)` | 把登录态快照恢复进当前浏览器，新浏览器也能直接拿到登录态 |
+| `verify_check(...)` | **产物运行期人机验证**：`async with verify_check(...)` 包裹易触发验证的代码段，触发即在运行中自动尝试通过（不弹窗）；限次未过抛 `VerificationFailed` 结束本次运行。详见[人机验证自动处理](#人机验证自动处理) |
+| `VerificationFailed` | `verify_check` 自动解超限时抛出的异常，可在外层 `try/except` 做按页降级 |
 
 `save_content` 的 `fmt` 说明：
 
@@ -381,7 +483,7 @@ for link in soup.select("a[href]"):
 
 同步上线时取消限制：启动加 `--no-dev-limit`（或环境变量 `DEV_LIMIT=0`），即可抓取全量数据，`limit_items` 也会原样返回所有数据。
 
-运行结束后，`/run` 返回的 `saved` 数组中包含本次保存的内容对象（`id` / `kind` / `name` / `path` / `size` / `content`），前端"输出"栏会列出这些已保存内容，点击即可查看详情。
+运行结束后，`/run` 返回的 `saved` 数组中包含本次保存的内容对象（`id` / `kind` / `name` / `path` / `size` / `content`），前端"输出"栏会列出这些已保存内容，点击即可查看详情或直接下载文件。
 
 ### 登录凭据复用
 
@@ -434,6 +536,43 @@ if not logged_in:                                   # 取不到 / 凭据失效 �
     cookies = await context.cookies()
     await set_login_ticket(ticket=cookies, host="example.com")
 ```
+
+### 人机验证自动处理
+
+项目内置「证据采集 → 类型判定 → 自动求解 → 出口复核」的人机验证链路，**全程不弹窗**，分开发期与产物运行期两个阶段使用：
+
+| 阶段 | 使用方式 | 说明 |
+|------|----------|------|
+| 开发期（Agent 会话） | `detect_verification()` / `solve_verification(max_attempts=3)` / `verify_status()` | 只在怀疑被拦截时调用：先判型，命中后限次自动求解；失败转 `ask_user` 询问用户（实时画面手动完成 / 换方式 / 交付已生成结果） |
+| 产物运行期（编辑器执行 / Agent 脚本 / `login` 模式） | `async with verify_check(...)` | 把易触发验证的代码段包进上下文；触发即在运行中自动尝试通过，限次未过抛 `VerificationFailed` |
+
+支持范围：**滑块（含缺口拼图）**、**「我是真人 / 我不是机器人」勾选框**、**图片点选（含网格）**；OCR 类验证码只做类型判定、不自动破解。判定以多模态模型为主、规则强命中兜底：通过 `--verify-vision-provider` / `--verify-vision-model` / `--verify-vision-base-url` 指定看图模型（留空则按规则判定）。
+
+运行期用法：
+
+```python
+# hints 可传开发期采集到的验证画像(类型/容器/目标物/网格), 不传也能跑
+hints = {"expected": ["checkbox", "slider_gap"],
+         "vendor": {"hcaptcha": True},
+         "container": {"selector": "#captcha-root"}}
+try:
+    async with verify_check(attempts=3, hints=hints) as vc:
+        await page.click(SUBMIT)              # 登录提交 / 翻页 / 加载更多等易触发动作
+        await page.wait_for_url(SUCCESS_URL)
+        await vc.passed()                     # 可选: 显式等绿灯再继续
+except VerificationFailed:
+    logger("本页被验证拦截且自动解未通过, 跳过本页")   # 按页降级: continue / 记录后跳过
+```
+
+`verify_check(timeout=0, attempts=None, wait_on_exit=True, hints=None)`：
+
+- `timeout`：包裹段最长监听时长（秒，`0` = 直到离开代码块）；
+- `attempts`：单次验证触发的自动尝试上限，缺省取 `--verify-max-attempts`；
+- `wait_on_exit`：离开代码块前再复核一次，仍被拦截则在剩余预算内继续解；
+- `hints`：开发期采集的验证画像（类型 / 容器 / 目标物 / 网格），用于加速判定；
+- 作用域对象 `vc` 提供 `vc.passed()`（显式等待绿灯）与 `vc.status()`。
+
+开关与限制：`--no-verify-runtime-exit` 让运行期超限时只放弃本次自动解、不结束运行（仅调试用）；`--verify-slider-only-right` 控制无缺口纯滑块优先拖到最右；`--no-verify-rule-fallback` 关闭无视觉模型时的规则兜底。**自动过验仅在 `dev` 模式的编辑器执行 / Agent 脚本与 `login` 模式中生效**；导出的独立运行包与 `run` 模式的 `verify_check` 为占位实现（不启用自动过验，需在脚本中自行处理验证）。开发期的 `detect_verification` / `solve_verification` / `verify_status` 不在脚本运行环境中，交付脚本只能使用 `verify_check`。
 
 ### 浏览器远程控制
 
@@ -499,7 +638,7 @@ uv run python main.py --cron                 # 使用导出时配置的默认表
 uv run python main.py --validate-cron "0 8 * * *"  # 仅校验并预览下次运行时间
 ```
 
-`main.py` 支持 `--headless` / `--no-headless` / `--dev-limit` / `--max-items` / `--max-bytes` 等参数；脚本内可直接使用 `page` / `context` / `browser` 与 `save_page` / `save_content` / `limit_items` / `page_login` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`，保存内容输出到 `output/`（登录凭据存本地 `login_tickets.json`）。cron 表达式支持 `*` `,` `-` `/`、`JAN-DEC` / `SUN-SAT` 及 `@daily` 等宏。
+`main.py` 支持 `--headless` / `--no-headless` / `--dev-limit` / `--max-items` / `--max-bytes` 等参数；脚本内可直接使用 `page` / `context` / `browser` 与 `save_page` / `save_content` / `limit_items` / `page_login` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`，保存内容输出到 `output/`（登录凭据存本地 `login_tickets.json`）。注意导出包中的 `verify_check` 为**占位实现**（不启用自动过验），验证需在脚本里自行处理。cron 表达式支持 `*` `,` `-` `/`、`JAN-DEC` / `SUN-SAT` 及 `@daily` 等宏。
 
 配套接口：`/api/v1/code/validate-cron`、`/api/v1/code/export`。
 
@@ -516,13 +655,18 @@ uv run python main.py --validate-cron "0 8 * * *"  # 仅校验并预览下次运
 #### Agent 能力
 
 - **操控项目浏览器**：`browser_navigate` / `browser_evaluate` / `page_analyze` / `browser_run_code` 直接驱动项目内置的 Xvfb + Chrome 链路，**浏览器操作由 Agent 自主完成**；需要账号/密码/验证码等私有信息时通过 `page_login` 模拟登录框询问并由系统自动回填（`browser_run_code` 可传 `restart=false` 复用当前浏览器以保住登录态）。
-- **判断爬取方式**：先 `http_request` 试探能否直抓（静态页、无鉴权走 HTTP），判断是否需要登录、是否 JS 动态渲染、反爬强度，再决定用浏览器渲染抓取。
+- **判断爬取方式**：先 `http_request` 试探能否直抓（静态页、无鉴权走 HTTP），判断是否需要登录、是否 JS 动态渲染、反爬强度，再决定用浏览器渲染抓取；需要真正读写 REST / 开放接口时用 `api_request`（GET/POST/PUT/PATCH/DELETE，可带请求头 / 查询参数 / JSON / 表单 / Cookie）。
+- **视觉判断**：`browser_screenshot` 截取当前页面并作为图片返回给多模态主模型，直接在下一轮「看到」真实渲染结果——用于确认布局 / 遮挡 / 弹窗 / 登录框 / 验证样式，或 DOM 与文本无法判断的场景（能用 DOM / 文本确定时仍优先用 `page_analyze` / `browser_evaluate`）。
+- **人机验证处理**：怀疑被滑块 / 「我是真人」/ 图片点选拦截时，先 `detect_verification` 判型，命中后再 `solve_verification` 限次自动求解（不弹窗），失败转 `ask_user`；交付脚本时把验证画像通过 `verify_check(hints=...)` 写入产物。
+- **过程叙述**：每批工具调用前简述「要做什么 + 为什么 + 预期结果」，拿到结果后说明关键发现与下一步；这些文字实时展示并作为多轮上下文持久化，用户能看清 Agent 的判断依据。
 - **先规划再实施**：复杂任务先用 `record_plan` 记录结构化规划（`goal / candidate_sites / scope / method / login_required / data_fields / steps`，展示在面板"📋 爬取规划"卡片），再用 `write_todos` 建立任务清单（面板"✅ 任务清单"实时显示进度，含进度条），中途遇到意外（页面结构变化、接口被封、方案走不通等）可主动修订规划与清单。
 - **小步调试再交付**：修改代码前先把待验证片段用 `debug_code`（临时脚本，写入虚拟文件系统 `/agent_backend/` 下）小范围运行验证，拼接跑通后再 `set_editor_code` 一次性写回编辑器；前端会展示**每次写回相对上一次修改/源文件的代码差异（diff 卡片）**。
 - **登录处理**：需要登录时用 `page_analyze` / `browser_evaluate` 判断登录类型（二维码/账密/验证码）与选择器，多种方式时 `ask_user` 询问用户；交付脚本的登录段按**登录必选流程**固定转译（见上文）。
 - **无法抉择时弹问卷**：`ask_user` 在多个备选网站/方案间无法取舍时打断 Agent，前端弹出问卷表单（单选/多选/填空），用户填写提交后 Agent 恢复继续。
 - **风控阻断后交付已生成结果**：遇到无法跳过的风控/反爬拦截时**不无限重试**——至多换思路再尝试一次，仍被阻断则用 `ask_user` 询问用户「直接交付已生成的结果 / 换方式继续 / 停止任务」，用户选择交付时把已保存数据与脚本写回编辑器并如实说明部分完成。
-- **结果保存**：爬取结果数据在脚本里用 `save_page()`（HTML）与 `save_content(data, fmt)`（文本/JSON/CSV/JSONL/图片）保存到 `tmp/saved/`（虚拟路径 `/saved/`，随运行结果返回）；辅助脚本/中间产物用 `archive_content` 归档到 `/agent_saved/`。
+- **结果保存**：爬取结果数据在脚本里用 `save_page()`（HTML）与 `save_content(data, fmt)`（文本/JSON/CSV/JSONL/图片）保存到 `tmp/saved/`（虚拟路径 `/saved/`，随运行结果返回）；辅助脚本/中间产物用 `archive_content` 归档到 `/agent_saved/`。前端「已保存内容」可直接展开查看与**下载**。
+- **保存纪律**：用户未明确要求时，每个页面 / 同一份数据只保存一次，默认用 JSON（`fmt="json"`）；仅当 JSON 无法表达或用户明确指定时才改用其它格式；直接抓取的多媒体文件转 base64 存入 JSON 并附源文件地址。
+- **进度显示**：交付脚本中只要有循环 / 翻页 / 逐条请求，就使用 `tqdm` 显示进度（同步 `tqdm.auto`、异步 `tqdm.asyncio`）；调试用的 `debug_code` 保持精简 `print`，避免进度帧淹没报错。
 
 前端通过 `/api/v1/ws/agent` 实时展示执行情况：流式文本、工具调用与结果、规划卡片、任务清单、已保存内容、登录请求，以及问卷表单。编辑器内容会防抖同步到后端（`/api/v1/editor/code`），Agent 据此读取/回写编辑器。
 
@@ -552,7 +696,7 @@ uv run python -m backend.main --llm-api-key sk-xxx --llm-model deepseek-v4-flash
 ## 🧪 测试
 
 ```bash
-uv run pytest                        # 全部测试 (~660 个)
+uv run pytest                        # 全部测试 (~830 个)
 uv run pytest --cov=backend --cov-report=term   # 覆盖率报告 (90%+)
 ```
 
@@ -566,6 +710,9 @@ uv run pytest --cov=backend --cov-report=term   # 覆盖率报告 (90%+)
 - **多窗口打开被提示"已有连接"**：本平台实时画面**同时仅允许一个窗口**观看与操控（非共享平台）。若第二个窗口是本页面刷新重开，会自动接管、不弹提示；否则可点击"接管连接"抢占或取消。
 - **执行很久没反应**：`/run` 为 SSE 流式输出，运行中输出栏可看到实时 `print`（空闲 5s 发一次心跳）。想终止脚本直接点 **"停止执行"**。
 - **源码管理 / Agent 会话 / 登录凭据不生效**：这些功能依赖 MongoDB（默认 `mongodb://127.0.0.1:27017`，库 `crawler`），确认已启动 Mongo；源码提交、Agent 会话等都会按 `--crawler-id`（缺省 `default`）隔离存储。
+- **`login` / `run` 模式提示「没有已提交代码」**：这两种模式只执行 MongoDB 中当前 `crawler_id` 的 **HEAD 提交**。请先在 `dev` 模式里把可用脚本提交到源码管理（或调 `POST /api/v1/code/commit`），并确保启动参数使用同一个 `--crawler-id`。
+- **`run` 模式启动后没有网页 / 看不到实时画面**：`run` 是无界面的 CLI 执行器，只通过 webhook / 心跳回传状态；需要观察画面请用 `dev` 或 `login` 模式（`login` 提供精简控制台与实时画面）。需要人工扫码或输密码时给 `run` 加 `--no-headless`。
+- **人机验证一直无法自动通过**：确认脚本把易触发动作包进了 `verify_check`；图片点选 / 复杂滑块建议配置 `--verify-vision-model`（多模态模型）以提高判定准确率。自动解有次数预算（默认 3 次），失败后应改走人工处理，不要无限重试。
 - **root 环境**：Chrome 已带 `--no-sandbox`，容器/CI 下可直接运行。
 - **多显示器冲突**：若 `:99` 已被其他进程的存活 Xvfb 占用（如上次实例崩溃遗留），后端会自动复用该 Xvfb 并同步清理遗留的 Chrome 窗口，状态栏的 Xvfb 指示灯反映真实运行状态，无需手动干预。
 

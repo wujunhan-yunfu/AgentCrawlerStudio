@@ -9,11 +9,11 @@
 No ffmpeg dependency · sub-20ms end-to-end latency · the live view is directly remote-controllable with mouse/keyboard · built-in Playwright / Pyright LSP / source version control / crawler Agent
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.141%2B-009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.150%2B-009688)
 ![React](https://img.shields.io/badge/React-18-61DAFB)
 ![WebSocket](https://img.shields.io/badge/Transport-WebSocket-purple)
 ![No ffmpeg](https://img.shields.io/badge/No%20dependency-ffmpeg-red)
-![Tests](https://img.shields.io/badge/Tests-~660%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-~830%20passing-brightgreen)
 
 </div>
 
@@ -26,7 +26,8 @@ A console project that streams a **real browser window** (including tab bar / ad
 - Built-in **Playwright code editor** (Monaco + Pyright LSP) to write scripts that drive the browser, with **streaming stdout echo** and the ability to **stop execution** at any time.
 - Built-in **DevTools-style panels** (Console / Elements / Network / Application).
 - Built-in **source version control**: editor code is committed / history / checked out by `crawler_id` (persisted in MongoDB), with automatic three-way merge of uncommitted drafts.
-- Built-in **crawler Agent** (LangChain + DeepAgents), a session-based multi-turn chat that automatically writes and delivers crawler scripts.
+- Built-in **crawler Agent** (LangChain + DeepAgents), a session-based multi-turn chat that automatically writes and delivers crawler scripts, with screenshot-based visual judgment and **automatic human-verification handling**.
+- **Three run modes (`dev` / `login` / `run`)**: a dev container, a login-only container that saves credentials, and a headless one-shot / scheduled executor with webhook callbacks — directly reusable by K8s / scheduling platforms.
 
 ## 📑 Table of Contents
 
@@ -40,11 +41,13 @@ A console project that streams a **real browser window** (including tab bar / ad
   - [Frontend Dev Mode](#frontend-dev-mode)
   - [UI Overview](#ui-overview)
 - [⚙️ Configuration](#️-configuration)
+- [🧭 Run Modes (dev / login / run)](#-run-modes-dev--login--run)
 - [🔌 HTTP/WS API](#-httpws-api)
 - [📖 User Guide](#-user-guide)
   - [Playwright Code Control](#playwright-code-control)
   - [Built-in Crawler Helper Functions](#built-in-crawler-helper-functions)
   - [Login Credential Reuse](#login-credential-reuse)
+  - [Automatic Human-Verification Handling](#automatic-human-verification-handling)
   - [Remote Browser Control](#remote-browser-control)
   - [Source Version Control](#source-version-control)
   - [Export Script (Standalone Package)](#export-script-standalone-package)
@@ -69,8 +72,13 @@ A console project that streams a **real browser window** (including tab bar / ad
 | **Code assistance** | black formatting, isort import sorting, auto-import quick fix, inlay hints |
 | **Source version control** | Editor code commit / history / checkout by `crawler_id` (commits persisted in MongoDB); the uncommitted draft is stored in browser localStorage and auto three-way merged with remote changes on refresh |
 | **Export script** | One-click export of editor code into a standalone `uv`-runnable project zip (pyproject.toml + README + main.py + runtime), no Xvfb needed, supports immediate run / cron-scheduled run with cron validation, and an optional headless/headed default |
-| **Crawler Agent** | Session-based multi-turn chat that automatically plans → debugs → writes scripts back, with interactive login support |
+| **Crawler Agent** | Session-based multi-turn chat that automatically plans → debugs → writes scripts back, with interactive login, screenshot-based visual judgment and process narration |
 | **Login credential reuse** | Tickets stored in MongoDB by host + crawler_id; log in once and reuse automatically |
+| **Three run modes** | `dev` full IDE; `login` auto-runs the Mongo HEAD code until "logged in and credential saved"; `run` starts no web server, executes once / on a cron schedule and calls back webhooks |
+| **Automatic human-verification handling** | Slider (with gap) / "I'm human" checkbox / image point-click: the Agent uses `detect_verification` / `solve_verification` during development, while delivered scripts use `verify_check` to auto-solve at runtime (no pop-up; ends the run when attempts are exhausted) |
+| **Visual judgment** | The `browser_screenshot` Agent tool captures the current page and hands it to the multimodal main model as an image — "use your eyes" when DOM/text is inconclusive |
+| **Theme & UI language** | Light / dark / follow-system theme, one-click Chinese / English UI switch |
+| **Result download** | Saved content in the output bar can be downloaded directly (HTML / JSON / CSV / images, etc.) |
 
 ## 🖼️ Interface Preview
 
@@ -100,7 +108,7 @@ A console project that streams a **real browser window** (including tab bar / ad
 - **Xvfb**: virtual display `:99` (1280x800x24), where headed Chrome renders.
 - **Chrome**: runs in headed mode; its **real browser window (with tab bar / address bar)** is shown in the view — no URL argument, landing on the default blank page. Navigation / remote control / live view / DevTools panels share the **same persistent browser** (a brand-new temp `--user-data-dir` profile, non-incognito — incognito breaks CDP's Cookie API); each `POST /run` automatically restarts a **fresh browser** (reallocating a temp profile dir and CDP port). `--remote-debugging-port` exposes CDP for Playwright and all control channels, leaving no history / cookies behind.
 - **Capture**: Pillow `ImageGrab` reads the virtual screen directly → JPEG encoding, **with no ffmpeg involved**; capture runs in a backend asyncio background task, with each frame's grab / encode offloaded to the default executor (`asyncio.to_thread`), keeping the event loop always idle.
-- **FastAPI**: fully async (async/await), **threadless** — no endpoint or WebSocket blocks the event loop; a dedicated asyncio capture task continuously captures and encodes at 30fps, and the WebSocket only pushes the latest frame. The live view `/ws/live` is **single-window exclusive**: only one connection at a time; a new window first receives `conflict`, then the client decides to cancel or send `kick` to take over the previous connection (same-page refresh takes over silently).
+- **FastAPI**: fully async (async/await), **threadless** — no endpoint or WebSocket blocks the event loop; a dedicated asyncio capture task continuously captures and encodes at 30fps, and the WebSocket only pushes the latest frame. The live view `/ws/live` is **single-window exclusive**: only one connection at a time; a new window first receives `conflict`, then the client decides to cancel or send `kick` to take over the previous connection (same-page refresh takes over silently). Routes are mounted according to `--mode`: `dev` mounts everything; `login` mounts only the console + live view/DevTools streams + mode/login status; `run` builds no web app and goes straight to the CLI executor. All web modes expose a `GET /healthz` readiness probe.
 - **Remote control**: once enlarged, the live view becomes an overlay that forwards mouse / wheel / keyboard / Chinese IME events over `/ws/input` to the backend, which injects them into the persistent browser via the **CDP Input domain** (coordinates are auto-converted to remove the browser top-bar offset).
 - **Fully async dependencies**: browser control uses the **Playwright async API**, network requests use the `httpx` async client, MongoDB uses the **motor** async driver, and the LSP bridge uses `asyncio.create_subprocess_exec` + async stdio.
 - **Code execution**: `POST /run` streams back via **SSE** (`start → stdout… → done`, `heartbeat` when idle); `print` in the script is pushed to the page line by line in real time, and the client can abort the request at any time to **stop execution**; scripts run in a worker thread with a separate event loop, without blocking the event loop.
@@ -152,6 +160,8 @@ Once started, visit: **http://\<host-IP\>:8080**
 
 > All API/WS endpoints are mounted under a configurable prefix, defaulting to **`/api/v1`** (e.g. `/api/v1/status`, `/api/v1/ws/live`), with the web console `GET /` as the only exception. The API/WS prefix is changed via `--api-prefix` or the `API_PREFIX` env var, and the frontend automatically reads it from the backend-injected `acs-api-prefix` meta to issue requests (no rebuild needed). The prefix for the web console entry and static assets is changed via `--web-prefix` or the `WEB_PREFIX` env var (default `/`; set it to e.g. `/studio` for sub-path deployment): the page, static assets, API and WS then all live under `/studio` (e.g. `/studio/api/v1/status`, `/studio/api/v1/ws/live`) and the frontend includes that prefix automatically (the injected meta already contains `web_prefix`), so both reverse-proxy modes (keeping or stripping the sub-path) work; the bare `/api/v1` remains available for backward compatibility (old scripts/probes).
 
+> The commands above start the full IDE in `dev` mode by default; for `login` / `run` modes (automatic login, one-shot/scheduled execution + webhooks), see [Run Modes](#-run-modes-dev--login--run).
+
 ### Frontend Dev Mode
 
 The frontend is React + Vite; the code editor is based on monaco-editor/react + monaco-languageclient, bridging over WebSocket to the **pyright language server** started by the backend, and the build output goes to `static/`.
@@ -178,20 +188,24 @@ backend/
 │   ├── storage.py   #   StorageChannel: Local/Session Storage/Cookies/IndexedDB
 │   ├── code_version.py # CodeStore: editor code commit snapshots (MongoDB, by crawler_id)
 │   ├── lsp.py       #   LspManager / LspSession: browser WebSocket <-> pyright subprocess bridge
-│   ├── crawler.py   #   Default crawler functions injected into the execution env (save_page/save_content/login credentials, etc.)
+│   ├── crawler.py   #   Default crawler functions injected into the execution env (save_page/save_content/login credentials/verify_check, etc.)
 │   ├── sandbox.py   #   Restricted sandbox safe_builtins: blocks open/os/pathlib/shutil/subprocess, etc.
 │   ├── save.py      #   save_content multi-format serialization (txt/json/jsonl/csv/img) and byte truncation
 │   ├── cron.py      #   Cron expression validation and next run time (stdlib only, reused verbatim in the exported package)
 │   ├── exporter.py  #   Export a standalone package: assemble the uv project zip (pyproject.toml/README/main/runtime/crawler)
+│   ├── runmode/     #   Run modes: login_mode (auto-login until credentials saved) run_mode (once/cron executor)
+│   │                #   runtime (standalone Playwright runtime) webhook/heartbeat/data_webhook (callbacks/heartbeat/data push)
 │   └── agent/       #   Crawler Agent: agent(create_deep_agent) runner(session orchestration/event persistence)
 │                      #   core/(LLM + virtual filesystem) session/(store/event/model) tools/(browser/HTTP/
-│                      #   editor/planning/save) login + run_login(login gate) middleware prompts checkpointer
+│                      #   editor/planning/save/verification) verify/(evidence/classification/solvers)
+│                      #   login + run_login(login gate) middleware prompts checkpointer
 └── routers/         # Routing layer: HTTP/WS endpoint definitions
     ├── console.py   #   GET /
     ├── control.py   #   /status /pages /navigate /screenshot /run(SSE) /restart /console/* /network/* /dom/* /storage/* /format /organize-imports
     ├── input.py     #   /ws/input (remote-control duplex WebSocket)
     ├── versions.py  #   /code/repo /code/commit /code/commits /code/checkout (source version)
     ├── export.py    #   /code/validate-cron /code/export (cron validation + standalone package export)
+    ├── runmode.py   #   /mode /login/status (run-mode info + login-mode status)
     ├── lsp.py       #   /ws/lsp WebSocket + /lsp/info
     ├── stream.py    #   /ws/live + /ws/console + /ws/network + /ws/dom + /ws/storage + /live.mjpg
     └── agent.py     #   Agent session management / multi-turn chat / questionnaire / login / /ws/agent / /editor/code
@@ -208,13 +222,14 @@ backend/
   - **Tools**: **screenshot** the current page (PNG preview), **restart stream** (restart the whole Xvfb + Chrome + capture chain);
   - **Crawler Agent**: session-based multi-turn chat agent panel (see below);
   - **Source Control**: code commit / history / checkout panel (see below).
+- **Theme & UI language**: the **gear menu** at the bottom of the activity bar switches between **light / dark / follow-system** themes and **Chinese / English** UI (both remembered locally).
 - **Code checking and coding assistance (LSP)**: inline **pyright** in the editor (using `.venv/bin/python` as the analysis core, with reasoning precision equivalent to Pylance) — the backend `/api/v1/ws/lsp` bridges a pyright subprocess, providing accurate type inference, `object.` completion / hover / signature help, go-to definition / references, and static diagnostics; the three injected globals `page` / `context` / `browser` are resolved by backend stub modules, so they won't be falsely reported as undefined.
 - **Pylance-style coding assistance**: built-in **inlay hints (parameter name hints)** that show the parameter name before positional arguments when calling known APIs, automatically skipping keyword arguments; semantic highlighting distinguishes **variable / parameter** tokens.
 - **Quick fix (auto-import)**: when a diagnostic reports "`X` is not defined" and `X` matches the library index, the editor lightbulb (💡) offers an "Add import" quick fix.
 - **Organize imports**: `Shift+Alt+O` or the **"Organize Imports"** button in the bottom output bar, calling the backend isort to sort / group import statements.
 - **Problems panel (VSCode-style)**: the **"Problems"** tab in the bottom output bar shows pyright results (error / warning counts, click to jump), with matching squiggles in the editor.
 - **Python code beautify**: `Shift+Alt+F` or the **"Format Code"** button, calling the backend **black** to beautify in one click.
-- **Execution & output (terminal-style streaming)**: the **"Output"** tab in the output bar shows run logs in real time — each line timestamped, unfinished half-lines shown with a blinking cursor, run start / end marked with styled markers (▶/✓/✗ + elapsed time), errors in red; after finishing, **saved content** is listed below (click to expand path / content details). The output bar height can be dragged via its top edge or bottom-left corner.
+- **Execution & output (terminal-style streaming)**: the **"Output"** tab in the output bar shows run logs in real time — each line timestamped, unfinished half-lines shown with a blinking cursor, run start / end marked with styled markers (▶/✓/✗ + elapsed time), errors in red; `tqdm` progress bars refresh in place on one line. After finishing, **saved content** is listed below (click to expand path / content details, or **download** the saved file directly). The output bar height can be dragged via its top edge or bottom-left corner.
 - **Interactive login pop-up**: when a standalone run (executing code from the output bar) calls `page_login`, a draggable login card appears on the page (QR login automatically **enlarges the live view** for scanning, offering "Scan done, continue / Refresh QR"; account-password / SMS code forms include a "Send code" countdown, etc.); after submission the script resumes automatically.
 - **Floating live view (remote control)**: the top-right floating **real Chrome window** (with top bar), millisecond latency, **always on top**; by default it collapses into the top-right corner (height ≤ 1/4 of the page height, click to enlarge), showing the default logo when there is no active browser:
   - **Click to enlarge** and it centers, darkening the background and becoming a **remote console**: mouse move / click / drag / wheel scroll / keyboard input directly operate the real browser; you can type **Chinese (IME)** directly inside the view, or send a whole block of text via the text box at the bottom (with live IME preview, `Enter` to send);
@@ -254,13 +269,94 @@ backend/
 | `--max-items` | `MAX_ITEMS` | `50` | In dev mode, the max number of items for lists/iterables in `save_content` / `limit_items` |
 | `--max-bytes` | `MAX_BYTES` | `524288` (512KB) | In dev mode, the max bytes for a single save (`save_content` text / `save_page` HTML) |
 
+**Human-verification handling** (on by default):
+
+| Option | Env var | Default | Description |
+|------|----------|--------|------|
+| `--verify-enabled` / `--no-verify-enabled` | `VERIFY_ENABLED` | `1` (on) | Human-verification handling switch (state exposed via `verify_status`; the auto-solve chain is enabled by default) |
+| `--verify-max-attempts` | `VERIFY_MAX_ATTEMPTS` | `3` | Auto-attempt budget per verification trigger (throws `VerificationFailed` when exhausted) |
+| `--verify-slider-only-right` / `--no-verify-slider-only-right` | `VERIFY_SLIDER_ONLY_RIGHT` | `1` | Prefer dragging a gapless slider all the way right |
+| `--verify-vision-provider` | `VERIFY_VISION_PROVIDER` | empty | Multimodal model provider (type classification / point-click; empty reuses the main model config) |
+| `--verify-vision-model` | `VERIFY_VISION_MODEL` | empty | Vision model name (empty = rule-based classification) |
+| `--verify-vision-base-url` | `VERIFY_VISION_BASE_URL` | empty | Multimodal model gateway base URL |
+| `--verify-rule-fallback` / `--no-verify-rule-fallback` | `VERIFY_RULE_FALLBACK` | `1` | Allow rule-based "strong hit" fallback when no vision model is configured |
+| `--no-verify-runtime-exit` | `VERIFY_RUNTIME_EXIT` | on | Do **not** end the run when runtime auto-solving exhausts its budget (debug only; still no pop-ups) |
+
+**Run modes (CDC orchestration)**:
+
+| Option | Env var | Default | Description |
+|------|----------|--------|------|
+| `--mode` | `MODE` | `dev` | Run mode: `dev` full IDE / `login` login only / `run` headless executor |
+| `--run-type` | `RUN_TYPE` | `once` | `run` mode: `once` or `cron` |
+| `--cron` | `CRON` | empty | Cron expression for `run` mode (required when `--run-type cron`) |
+| `--run-id` | `RUN_ID` | empty | Run ID (generated by CDC, echoed in webhooks; auto-generated when empty) |
+| `--webhook-url` | `WEBHOOK_URL` | empty | Run-event callback URL (no events are sent when empty) |
+| `--webhook-secret` | `WEBHOOK_SECRET` | empty | webhook HMAC signing secret |
+| `--heartbeat-url` | `HEARTBEAT_URL` | derived from webhook | Heartbeat URL for the cron daemon (same-origin `/heartbeat` by default) |
+| `--heartbeat-interval` | `HEARTBEAT_INTERVAL` | `30` | Heartbeat interval (seconds), only for `run` + `cron` |
+| `--data-webhook-url` | `DATA_WEBHOOK_URL` | derived from webhook | Crawled-data push URL (one `data.saved` per `save_content`; empty = disabled) |
+| `--data-inline-max-bytes` | `DATA_INLINE_MAX_BYTES` | `1048576` | Inline data threshold (larger payloads reserve presigned direct upload) |
+| `--data-webhook-sync` / `--no-data-webhook-sync` | `DATA_WEBHOOK_SYNC` | off (async) | Whether `save_content` waits synchronously for CDC confirmation |
+| `--login-timeout` | `LOGIN_TIMEOUT` | `300` | Total timeout for `login` mode (seconds) |
+| `--source` | `SOURCE` | `editor` | Code-source marker (currently `login` / `run` always read the Mongo HEAD) |
+| `--headless` / `--no-headless` | `HEADLESS` | per mode (`run` defaults to headless) | Run headless |
+| `--serve` / `--no-serve` | `SERVE` | off | `login`-mode live-view service marker (for CDC orchestration, exposed via `/mode`) |
+
 **Bandwidth reference** (1280x800): `--quality 70` is about 3~5 Mbps. If bandwidth is tight, lower `--quality` or the resolution.
+
+## 🧭 Run Modes (dev / login / run)
+
+The same code / image switches purpose via `--mode` (or the `MODE` env var), so K8s / scheduling platforms can reuse it as a **dev container / login container / run container**:
+
+| Mode | Web service | Behavior |
+|------|-------------|----------|
+| `dev` (default) | Full IDE | Mounts all routes: editor / Agent / version control / export / DevTools / live view |
+| `login` | Slim console | On startup, automatically loads and runs the **HEAD code** of the current `crawler_id` from MongoDB; mounts only the console + live-view/DevTools streams + mode/login-status endpoints; finishes as soon as `set_login_ticket` saves a credential |
+| `run` | None (CLI) | Runs the Mongo HEAD code directly (one-shot / cron), headless by default, reporting run events and crawled data via webhooks |
+
+All web modes (`dev` / `login`) expose `GET /healthz`: it returns `ok: true` only when Xvfb / Chrome / CDP are ready, so it can be used directly as a K8s probe.
+
+### login mode
+
+```bash
+MODE=login uv run python -m backend.main \
+  --crawler-id demo --login-timeout 300      # --serve marks the CDC scenario (returned by /mode)
+curl http://127.0.0.1:8080/api/v1/login/status
+```
+
+- `GET /login/status` returns `status` (`pending` / `running` / `succeeded` / `failed`), `error`, `run_id`, and start/end times for CDC polling;
+- **Completion rule**: the first successful `set_login_ticket(...)` in the script raises `LoginComplete` and ends the login run immediately (the rest of the crawl is not executed); a script that finishes without saving a credential is recorded as `login_not_saved`, and a timeout is a failure;
+- Interactive login reuses the `/run` chain (`RunLoginManager` + `page_login`): CDC can embed the live view so the user scans / follows the login there, and a successful scan is detected from the page navigation before the script continues; if the current `crawler_id` has no HEAD commit in Mongo, the run fails immediately with a clear reason.
+
+### run mode
+
+```bash
+# One-shot run (headless, run events reported to CDC)
+MODE=run RUN_TYPE=once CRAWLER_ID=demo \
+WEBHOOK_URL=https://cdc.example.com/api/v1/webhooks/runs WEBHOOK_SECRET=xxx \
+uv run python -m backend.main
+
+# Scheduled run (cron + heartbeat + per-item save_content data push)
+MODE=run RUN_TYPE=cron CRON="*/10 * * * *" CRAWLER_ID=demo \
+WEBHOOK_URL=https://cdc.example.com/api/v1/webhooks/runs \
+DATA_WEBHOOK_URL=https://cdc.example.com/api/v1/webhooks/data \
+uv run python -m backend.main
+```
+
+- **Code source**: always the Mongo HEAD commit of the current `crawler_id`; when there is no usable commit or Mongo is unreachable, the process exits with code `2` and reports `run.failed` (`error.type=no_code`);
+- **Run events**: `run.started` / `run.succeeded` / `run.failed`; login failures and exhausted human-verification attempts are classified as `login_failed` / `verification_failed`, everything else as `code_error`;
+- **Webhook protocol**: JSON body + `X-Webhook-Event` / `X-Webhook-Delivery` / `X-Webhook-Timestamp` / `X-Webhook-Signature` (`sha256=HMAC_SHA256(secret, timestamp + "." + body)`), retried with exponential backoff;
+- **Data push**: with a data webhook configured, every `save_content(...)` pushes one `data.saved` event (async bounded queue by default; `--data-webhook-sync` waits for confirmation); the final run event is sent after the data queue is flushed;
+- **Heartbeat**: the `cron` daemon reports process status, `next_run_at` / `last_run` / health every `--heartbeat-interval`, and sends `stopping` before exit;
+- **Mode differences**: headless by default (`--no-headless` for manual login); `page_login` shows no frontend login card — it prints scan / login instructions in the terminal and polls for navigation;
+- **Exit codes**: `0` success / `1` run failure / `2` no code or invalid cron expression / `130` interrupted.
 
 ## 🔌 HTTP/WS API
 
 | Method | Path | Description |
 |------|------|------|
 | GET | `/` (default; with `--web-prefix` set, `/{web-prefix}` and `/{web-prefix}/`) | Web console (static assets under `/assets` and `/{web-prefix}/assets`) |
+| GET | `/healthz` | Readiness probe: returns `ok: true` when Xvfb / Chrome / CDP are ready (with `mode` / `crawler_id`), for K8s probes / CDC |
 | WS  | `/api/v1/ws/live` | Live view WebSocket (**single-window exclusive**: a second window gets `conflict` and can reply `kick` to take over the connection; same-page refresh with the same `?client_id=` takes over silently). Binary frame = float64 timestamp + JPEG; control messages `hello` / `conflict` / `kicked` |
 | WS  | `/api/v1/ws/input` | Remote-control duplex WebSocket: the client reports mouse (`move/down/up/wheel`) / keyboard (`down/up/char`) / touch / text (`insert/compose/commit`) events, and the backend injects them into the browser via CDP Input; returns `hello {viewport,offset,enabled}` / `ok` / `disabled` / `error` |
 | GET | `/api/v1/live.mjpg` | MJPEG-compatible endpoint (compatible with legacy `<img>` playback, not subject to the single-window limit) |
@@ -281,6 +377,8 @@ backend/
 | POST | `/api/v1/storage/cookie/set` / `/delete` | Set/delete a Cookie |
 | POST | `/api/v1/storage/idb/databases` / `stores` / `data` | IndexedDB database / object store / data browsing |
 | GET | `/api/v1/status` | Process / capture / page status JSON |
+| GET | `/api/v1/mode` | Current run mode / `crawler_id` / `serve` marker (for CDC mode awareness) |
+| GET | `/api/v1/login/status` | `login` mode status (`pending` / `running` / `succeeded` / `failed` + error and start/end times) |
 | GET | `/api/v1/pages` | List of currently open tabs |
 | POST | `/api/v1/navigate` | Navigate the persistent browser `{"url":"...","new_page":bool}` |
 | POST | `/api/v1/screenshot` | Return a PNG screenshot of the current page |
@@ -347,6 +445,8 @@ for link in soup.select("a[href]"):
     print(link.get("href"))
 ```
 
+Whenever the script has a **loop / pagination / per-item request**, use `tqdm` to show progress (`from tqdm.auto import tqdm` for sync, `from tqdm.asyncio import tqdm_asyncio` for async); the output bar and Agent debug results refresh progress bars in place. `tqdm` ships with the execution environment and exported packages, so no extra installation is needed.
+
 ### Built-in Crawler Helper Functions
 
 The code execution environment additionally provides the following built-in functions (the backend LSP stub module provides matching completion/signature/hover hints), and **the previously saved content is cleared before each run**:
@@ -358,9 +458,11 @@ The code execution environment additionally provides the following built-in func
 | `limit_items(data, n=None)` | In dev/test mode, limit iteration length: lists/tuples take the first `n` items (default `max_items`), iterators/generators are lazily sliced via `islice`; in production mode it returns the input as-is |
 | `get_login_ticket(host)` | Read the ticket stored under the given `host` from MongoDB and return it as-is, or `None` if not found; **it only reads and does no processing** — acquiring and using the ticket is up to your own script (inject directly with playwright objects) |
 | `set_login_ticket(ticket, host)` | Store the `ticket` value directly under the given `host` (creating it if absent, associated with the current `crawler_id`); **it only stores and does no processing**, returning the written `ticket` |
-| `page_login(method, ...)` | Interactive login (**must be called in a crawler Agent session or a standalone `/run` script**, which pauses and shows a login box waiting for the user): `method` is **required and must be explicitly specified** as `qr` (QR code) / `account` (username-password) / `sms` (verification code), **`auto` is not supported**; returns `{"ok","method","url","error"}`. **It only brings up the user login, it does not save credentials** |
+| `page_login(method, ...)` | Interactive login (**must be called in a crawler Agent session, a standalone `/run` script or `login` mode**, which pauses and waits for the user to finish logging in): `method` is **required and must be explicitly specified** as `qr` (QR code) / `account` (username-password) / `sms` (verification code), **`auto` is not supported**; returns `{"ok","method","url","error"}`. **It only brings up the user login, it does not save credentials** |
 | `capture_login_state()` | Read the browser's cookies / localStorage / sessionStorage and return a full snapshot, with a `credentials` field classifying authentication credentials (token/jwt, etc.) |
 | `restore_login_state(state)` | Restore a login-state snapshot into the current browser, so even a new browser gets the login state directly |
+| `verify_check(...)` | **Runtime human-verification handling**: wrap verification-prone code in `async with verify_check(...)`; when verification triggers, it auto-solves during the run (no pop-ups); when attempts are exhausted it throws `VerificationFailed` and ends the run. See [Automatic Human-Verification Handling](#automatic-human-verification-handling) |
+| `VerificationFailed` | Exception thrown when `verify_check` exhausts its attempts; catch it in an outer `try/except` for per-page degradation |
 
 `save_content`'s `fmt` values:
 
@@ -382,7 +484,7 @@ The code execution environment runs in a **restricted sandbox**: apart from `sav
 
 To remove the limits for going live: add `--no-dev-limit` at startup (or `DEV_LIMIT=0`), and full data is scraped with `limit_items` returning everything as-is.
 
-After a run finishes, the `saved` array returned by `/run` contains the content objects saved this time (`id` / `kind` / `name` / `path` / `size` / `content`), and the frontend's "Output" bar lists these saved items; click to view details.
+After a run finishes, the `saved` array returned by `/run` contains the content objects saved this time (`id` / `kind` / `name` / `path` / `size` / `content`), and the frontend's "Output" bar lists these saved items; click to view details or download the file directly.
 
 ### Login Credential Reuse
 
@@ -435,6 +537,43 @@ if not logged_in:                                   # not obtained / credential 
     cookies = await context.cookies()
     await set_login_ticket(ticket=cookies, host="example.com")
 ```
+
+### Automatic Human-Verification Handling
+
+The project ships an "evidence collection → type classification → auto-solving → exit re-check" chain for human verification, with **no pop-ups**, used in two stages:
+
+| Stage | How to use | Notes |
+|------|------------|-------|
+| Development (Agent session) | `detect_verification()` / `solve_verification(max_attempts=3)` / `verify_status()` | Call only when a block is suspected: classify first, then auto-solve within a budget; on failure the Agent asks the user via `ask_user` (finish manually in the live view / change approach / deliver partial results) |
+| Runtime (editor runs / Agent scripts / `login` mode) | `async with verify_check(...)` | Wrap verification-prone code sections; when triggered, it auto-solves during the run, and throws `VerificationFailed` when the budget is exhausted |
+
+Supported: **sliders (including gap puzzles)**, **"I'm human / I'm not a robot" checkboxes**, **image point-click (including grids)**. OCR captchas are only classified, never auto-solved. Classification is primarily multimodal-model based with rule fallback: configure the vision model with `--verify-vision-provider` / `--verify-vision-model` / `--verify-vision-base-url` (empty = rule-based).
+
+Runtime usage:
+
+```python
+# hints from development-time evidence (type/container/target/grid) are optional
+hints = {"expected": ["checkbox", "slider_gap"],
+         "vendor": {"hcaptcha": True},
+         "container": {"selector": "#captcha-root"}}
+try:
+    async with verify_check(attempts=3, hints=hints) as vc:
+        await page.click(SUBMIT)              # login submit / pagination / load-more, etc.
+        await page.wait_for_url(SUCCESS_URL)
+        await vc.passed()                     # optional: explicitly wait for the green light
+except VerificationFailed:
+    logger("page blocked by verification and auto-solve failed; skipping")   # per-page degradation
+```
+
+`verify_check(timeout=0, attempts=None, wait_on_exit=True, hints=None)`:
+
+- `timeout`: max monitoring time for the wrapped block (seconds, `0` = until leaving the block);
+- `attempts`: auto-attempt budget per trigger, defaulting to `--verify-max-attempts`;
+- `wait_on_exit`: re-check before leaving the block and keep solving within the remaining budget;
+- `hints`: development-time profile (type / container / target / grid) to speed up classification;
+- the scope object `vc` provides `vc.passed()` (explicitly wait for the green light) and `vc.status()`.
+
+Switches and limits: `--no-verify-runtime-exit` only abandons the current auto-solve instead of ending the run (debug only); `--verify-slider-only-right` controls gapless-slider behavior; `--no-verify-rule-fallback` disables rule fallback without a vision model. **Auto-solving is active only in `dev` editor runs / Agent scripts and in `login` mode**; in exported standalone packages and `run` mode `verify_check` is a placeholder (no auto-solving — handle verification in the script yourself). The development tools `detect_verification` / `solve_verification` / `verify_status` do not exist in the script runtime; delivered scripts can only use `verify_check`.
 
 ### Remote Browser Control
 
@@ -500,7 +639,7 @@ uv run python main.py --cron                 # use the default expression config
 uv run python main.py --validate-cron "0 8 * * *"  # validate only and preview the next run time
 ```
 
-`main.py` supports `--headless` / `--no-headless` / `--dev-limit` / `--max-items` / `--max-bytes`, etc.; inside the script you can directly use `page` / `context` / `browser` and `save_page` / `save_content` / `limit_items` / `page_login` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`, with saved content output to `output/` (login credentials stored locally in `login_tickets.json`). Cron expressions support `*` `,` `-` `/`, `JAN-DEC` / `SUN-SAT`, and macros like `@daily`.
+`main.py` supports `--headless` / `--no-headless` / `--dev-limit` / `--max-items` / `--max-bytes`, etc.; inside the script you can directly use `page` / `context` / `browser` and `save_page` / `save_content` / `limit_items` / `page_login` / `get_login_ticket` / `set_login_ticket` / `capture_login_state` / `restore_login_state` / `verify_check`, with saved content output to `output/` (login credentials stored locally in `login_tickets.json`). Note that `verify_check` in exported packages is a **placeholder** (no auto-solving), so handle verification inside the script. Cron expressions support `*` `,` `-` `/`, `JAN-DEC` / `SUN-SAT`, and macros like `@daily`.
 
 Companion endpoints: `/api/v1/code/validate-cron`, `/api/v1/code/export`.
 
@@ -517,13 +656,18 @@ The **spider icon** in the activity bar opens the **Crawler Agent** panel. Built
 #### Agent Capabilities
 
 - **Operating the project browser**: `browser_navigate` / `browser_evaluate` / `page_analyze` / `browser_run_code` directly drive the project's built-in Xvfb + Chrome chain, **with browser operations performed autonomously by the Agent**; when private info such as account/password/verification code is needed, `page_login` shows a simulated login box to ask, and the system auto-fills it (`browser_run_code` can pass `restart=false` to reuse the current browser and preserve the login state).
-- **Deciding the crawl approach**: first probe with `http_request` whether it can be scraped directly (HTTP for static pages without auth), judging whether login is needed, whether it is JS-rendered, and the anti-scraping strength, before deciding to scrape via browser rendering.
+- **Deciding the crawl approach**: first probe with `http_request` whether it can be scraped directly (HTTP for static pages without auth), judging whether login is needed, whether it is JS-rendered, and the anti-scraping strength, before deciding to scrape via browser rendering; use `api_request` when actually reading/writing REST or open APIs (GET/POST/PUT/PATCH/DELETE with headers / query params / JSON / form / cookies).
+- **Visual judgment**: `browser_screenshot` captures the current page and returns it as an image to the multimodal main model, which can "see" the real rendering in the next turn — for confirming layout / occlusion / pop-ups / login boxes / verification styles, or when DOM and text are inconclusive (still prefer `page_analyze` / `browser_evaluate` when they can determine the answer).
+- **Human-verification handling**: when a slider / "I'm human" / image point-click block is suspected, call `detect_verification` first, then `solve_verification` within a budget (no pop-ups), and fall back to `ask_user` on failure; when delivering a script, pass the profile through `verify_check(hints=...)`.
+- **Process narration**: before each batch of tool calls, briefly state "what to do + why + expected result"; after results arrive, explain key findings and the next step. These messages are streamed live and persisted as multi-turn context, so users can follow the Agent's reasoning.
 - **Plan before implementing**: for complex tasks, first record a structured plan with `record_plan` (`goal / candidate_sites / scope / method / login_required / data_fields / steps`, shown in the panel's "📋 Crawl Plan" card), then build a task list with `write_todos` (the panel's "✅ Task List" shows progress live, with a progress bar); when surprises occur (page structure changes, API blocked, approach not working, etc.), the plan and list can be proactively revised.
 - **Debug in small steps before delivering**: before modifying code, run the pending snippet in a small scope with `debug_code` (a temporary script written under `/agent_backend/` in the virtual filesystem); once the pieces work together, write it back to the editor in one go with `set_editor_code`; the frontend shows a **diff card of each write-back relative to the previous change/source file**.
 - **Login handling**: when login is needed, use `page_analyze` / `browser_evaluate` to determine the login type (QR/account-SMS code) and selectors, and use `ask_user` to ask when there are multiple options; the delivered script's login section is translated with the fixed **mandatory login flow** (see above).
 - **Questionnaire when undecided**: when `ask_user` cannot choose between multiple candidate sites/approaches, it interrupts the Agent, and the frontend shows a questionnaire form (single/multi choice, free text); after the user fills it in and submits, the Agent resumes.
 - **Deliver generated results after risk-control blocking**: when hitting an unskippable risk-control/anti-scraping block, **do not retry indefinitely** — try at most one alternative approach, and if still blocked, use `ask_user` to ask the user to choose "deliver the results generated so far / continue another way / stop the task"; if the user chooses to deliver, the saved data and script are written back to the editor with an honest explanation of partial completion.
-- **Result saving**: crawled result data is saved in the script with `save_page()` (HTML) and `save_content(data, fmt)` (text/JSON/CSV/JSONL/image) to `tmp/saved/` (virtual path `/saved/`, returned with the run results); helper scripts/intermediate artifacts are archived with `archive_content` to `/agent_saved/`.
+- **Result saving**: crawled result data is saved in the script with `save_page()` (HTML) and `save_content(data, fmt)` (text/JSON/CSV/JSONL/image) to `tmp/saved/` (virtual path `/saved/`, returned with the run results); helper scripts/intermediate artifacts are archived with `archive_content` to `/agent_saved/`. Saved content in the frontend can be expanded and **downloaded** directly.
+- **Saving discipline**: unless the user asks otherwise, save each page / dataset only once and default to JSON (`fmt="json"`); use another format only when JSON cannot express the data or the user explicitly requests it; downloaded media files are stored as base64 inside JSON together with their source URL.
+- **Progress display**: delivered scripts use `tqdm` for any loop / pagination / per-item request (sync `tqdm.auto`, async `tqdm.asyncio`); `debug_code` keeps concise `print` output so progress frames do not drown out errors.
 
 The frontend shows execution in real time via `/api/v1/ws/agent`: streaming text, tool calls and results, plan cards, task lists, saved content, login requests, and questionnaires. Editor content is debounced and synced to the backend (`/api/v1/editor/code`), from which the Agent reads/writes back the editor.
 
@@ -553,7 +697,7 @@ uv run python -m backend.main --llm-api-key sk-xxx --llm-model deepseek-v4-flash
 ## 🧪 Tests
 
 ```bash
-uv run pytest                        # all tests (~660)
+uv run pytest                        # all tests (~830)
 uv run pytest --cov=backend --cov-report=term   # coverage report (90%+)
 ```
 
@@ -567,6 +711,9 @@ uv run pytest --cov=backend --cov-report=term   # coverage report (90%+)
 - **Opening in multiple windows prompts "already connected"**: the live view allows **only one window** to watch and control at a time (it is not a sharing platform). If the second window is this page refreshed/reopened, it takes over automatically with no prompt; otherwise you can click "take over connection" to preempt or cancel.
 - **No response for a long time after running**: `/run` is SSE-streamed, so during a run you can see live `print` output in the output bar (a heartbeat is sent every 5s when idle). To terminate the script, just click **"Stop execution"**.
 - **Source control / Agent sessions / login credentials not working**: these features depend on MongoDB (default `mongodb://127.0.0.1:27017`, db `crawler`); make sure Mongo is running; source commits, Agent sessions, etc. are all isolated and stored by `--crawler-id` (default `default`).
+- **`login` / `run` mode says "no committed code"**: these modes only run the **HEAD commit** of the current `crawler_id` in MongoDB. Commit a working script from `dev` mode's Source Control first (or call `POST /api/v1/code/commit`), and make sure the startup args use the same `--crawler-id`.
+- **`run` mode starts with no web page / no live view**: `run` is a headless CLI executor that reports status only via webhooks / heartbeats; use `dev` or `login` mode when you need to watch the screen (`login` provides a slim console and live view). Add `--no-headless` to `run` when manual QR / password login is needed.
+- **Human verification never auto-passes**: make sure verification-prone actions are wrapped in `verify_check`; for image point-click / complex sliders, configure `--verify-vision-model` (a multimodal model) to improve classification accuracy. Auto-solving has an attempt budget (3 by default); after it fails, switch to manual handling instead of retrying indefinitely.
 - **root environment**: Chrome already includes `--no-sandbox`, so it runs directly in containers/CI.
 - **Multi-display conflict**: if `:99` is already occupied by a surviving Xvfb from another process (e.g. left over from a crashed instance), the backend automatically reuses that Xvfb and cleans up leftover Chrome windows; the Xvfb indicator in the status bar reflects the real running state, with no manual action needed.
 
