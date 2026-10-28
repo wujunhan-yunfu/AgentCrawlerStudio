@@ -41,11 +41,16 @@ def _guarded_import(name: str, globals: Any = None, locals: Any = None,
 
 
 def safe_builtins() -> dict[str, Any]:
-    """构建受限 builtins 字典: 无 open, __import__ 被守卫。"""
+    """构建受限 builtins 字典: 无 open, __import__ 被守卫。
+
+    保留 __build_class__: 用户脚本常定义 dataclass/Pydantic 模型/自定义异常,
+    缺少它会让合法的 class 语句直接 NameError。
+    注意: 这是"防误用"而不是安全沙箱; 真正隔离需子进程/容器(见 docs)。
+    """
     base: dict[str, Any] = {
         k: v
         for k, v in vars(_real_builtins).items()
-        if not k.startswith("__") or k in ("__import__",)
+        if not k.startswith("__") or k in ("__import__", "__build_class__")
     }
     for name in _BLOCKED_BUILTINS:
         base.pop(name, None)

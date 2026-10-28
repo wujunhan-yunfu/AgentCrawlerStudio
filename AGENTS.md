@@ -56,6 +56,10 @@ uv run pytest --cov=backend --cov-report=term   # coverage report
 - **Dev limit** is ON by default (`--dev-limit`/`DEV_LIMIT=1`); `--no-dev-limit` for full data
 - `crawler_id` defaults to empty (Agent falls back to `"default"`); set via `--crawler-id` or `CRAWLER_ID` env var for login ticket / session isolation
 - Agent is a **unified session-based multi-turn chat** (no crawler/code type split); sessions + messages persist to MongoDB per `crawler_id`
+- **Single Agent run per instance**: `AgentManager` holds a global run lock; while any session is running/waiting, creating a session or sending a message returns 409 (`AgentBusyError`). Browser script execution also has a non-blocking lease (`BrowserBusy`); `/run` and Agent no longer restart Chrome under each other
+- Agent interaction recovery: `ask_user` has no timeout; its `{qid, questions}` is persisted to `agent_sessions.question` while waiting and cleared on answer, so refresh/reopen/switch-session can restore the form and resume the same turn. `page_login` keeps its payload timeout (`login_timeout`). On startup, stale `running`/`waiting` sessions are marked `interrupted` with `question` cleared
+- Events are per-session sequenced (`seq`) with a process `epoch`; `/ws/agent?session=&since=` supports incremental replay, and the frontend dedupes by seq after reconnect
+- Chrome profiles live under `.chrome-profile/` (outside the Agent virtual FS root `tmp/`); startup sweeps stale profiles/saved artifacts via `services/tmp_cleanup.py`
 - LLM defaults: provider=`deepseek`, model=`deepseek-v4-flash` (override via CLI or env)
 - `llm_api_key` must be provided for Agent features (400 error if missing)
 - MongoDB: `mongodb://127.0.0.1:27017`, db=`crawler` (configurable via `--mongo-uri`/`--mongo-db`)

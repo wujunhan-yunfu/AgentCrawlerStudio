@@ -12,6 +12,7 @@ const STATUS_TEXT: Record<AgentStatus, MessageKey> = {
   done: "agent.status.done",
   error: "agent.status.error",
   cancelled: "agent.status.cancelled",
+  interrupted: "agent.status.interrupted",
 };
 
 function TodoBadge({ status }: { status: "pending" | "in_progress" | "completed" }) {
@@ -1114,6 +1115,7 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
               className={`agent-menu-item${!activeId ? " active" : ""}`}
               role="menuitem"
               title={t("agent.newSessionTitle")}
+              disabled={dotState(null) === "busy"}
               onClick={() => pick(onNew)}
             >
               <span className="agent-menu-dot">
@@ -1254,7 +1256,8 @@ export default function AgentPanel({
     setPlanDismissed({});
   }, [agent.turnSeq]);
 
-  const busy = agent.status === "running" || agent.status === "waiting";
+  const busy = agent.busy;
+  const activeBusy = agent.status === "running" || agent.status === "waiting";
   const hasSession = Boolean(agent.activeId);
   const showPlan = Boolean(agent.activeId && agent.plan && !planDismissed[agent.activeId]);
 
@@ -1289,6 +1292,7 @@ export default function AgentPanel({
   };
 
   const handleNew = () => {
+    if (busy) return;
     agent.startNewSession();
   };
 
@@ -1321,8 +1325,9 @@ export default function AgentPanel({
             </button>
             <button
               className="agent-session-new"
-              title={t("agent.newSessionTitle")}
+              title={busy ? t("agent.singleRunHint") : t("agent.newSessionTitle")}
               onClick={handleNew}
+              disabled={busy}
             >
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M8 2.5a5.5 5.5 0 0 0 0 11c.8 0 1.5-.1 2.2-.4l2.8.9-.9-2.8c.7-.9 1.1-2.1 1.1-3.2A5.5 5.5 0 0 0 8 2.5Z" />
@@ -1377,7 +1382,9 @@ export default function AgentPanel({
 
       {showPlan ? <PlanPanel plan={agent.plan} onClose={dismissPlan} /> : null}
       <div className="agent-input-bar">
-        {hasSession && !busy && agent.activeSession ? (
+        {busy && !activeBusy ? (
+          <span className="hint agent-done-hint">{t("agent.singleRunHint")}</span>
+        ) : hasSession && !busy && agent.activeSession ? (
           <span className="hint agent-done-hint">{t("agent.continueHint")}</span>
         ) : null}
         <textarea
@@ -1389,7 +1396,7 @@ export default function AgentPanel({
           placeholder={t("agent.inputPlaceholder")}
           rows={2}
         />
-        {busy ? (
+        {activeBusy ? (
           <button className="danger send-btn" onClick={() => void agent.stop()}>
             {t("agent.stop")}
           </button>
@@ -1397,7 +1404,7 @@ export default function AgentPanel({
           <button
             className="primary send-btn"
             onClick={() => void handleSend()}
-            disabled={!taskInput.trim() || sending}
+            disabled={!taskInput.trim() || sending || busy}
           >
             {sending ? t("agent.sending") : hasSession ? t("agent.send") : t("agent.createAndSend")}
           </button>

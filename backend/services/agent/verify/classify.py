@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from .evidence import parse_evidence
@@ -22,7 +22,6 @@ TYPE_SLIDER = "slider"
 TYPE_POINTS = "points_click"
 TYPE_OCR = "ocr"
 TYPE_NONE = "none"
-SUPPORTED_TYPES = (TYPE_CHECKBOX, TYPE_SLIDER, TYPE_POINTS)
 
 # 规则"强直接命中"词表(命中才算依据, 避免弱词误报)
 _RULE_SLIDER = re.compile(
@@ -253,7 +252,7 @@ class Classifier:
             return None
         if not self._api_key():
             return None
-        from langchain_core.messages import HumanMessage, SystemMessage
+        from langchain_core.messages import HumanMessage
         from langchain_openai import ChatOpenAI
         from pydantic import SecretStr
 
@@ -300,7 +299,7 @@ class Classifier:
             )
         try:
             raw = await fn(json.dumps(ev, ensure_ascii=False), image)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             rule = rule or ClassifyResult(present=False, type=TYPE_NONE, confidence=0.0, reason="")
             return result_from_model(None, ev, rule if rule.present else None)
         data = parse_model_output(raw)

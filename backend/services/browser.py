@@ -8,6 +8,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -24,9 +25,18 @@ from .input import InputInjector
 from .network import NetworkChannel
 from .storage import StorageChannel
 
+# 临时 Chrome profile 放到项目内独立目录, 不再放进 Agent 可见的 tmp/ 根目录,
+# 避免 Agent 文件工具读到 profile 里的 Cookie/登录数据。
+CHROME_PROFILE_ROOT = PROJECT_ROOT / ".chrome-profile"
+_MAX_OUTPUT_CHARS = 2 * 1024 * 1024
+
 
 class BrowserError(Exception):
     """服务层异常, 由路由层转换为 HTTP 错误"""
+
+
+class BrowserBusy(BrowserError):
+    """浏览器正在执行其他脚本(单实例只允许一个执行租约)。"""
 
 
 class BrowserStream:
@@ -53,6 +63,21 @@ class BrowserStream:
         self._profile_dir: str | None = None
         self._http: httpx.AsyncClient | None = None
         self._http_loop: asyncio.AbstractEventLoop | None = None
+        # 跨事件循环/线程的执行租约: /run 在 worker 线程, Agent 在主循环,
+        # 用 threading.Lock 做非阻塞互斥, 第二个执行请求直接得到 BrowserBusy。
+        self._run_guard = threading.Lock()
+
+    @property
+    def busy(self) -> bool:
+        return self._run_guard.locked()
+
+    def try_acquire_run(self) -> bool:
+        """尝试获取执行租约; 已有脚本运行时返回 False。"""
+        return self._run_guard.acquire(blocking=False)
+
+    def release_run(self) -> None:
+        if self._run_guard.locked():
+            self._run_guard.release()
 
     def _client(self) -> httpx.AsyncClient:
         """返回绑定当前事件循环的 CDP HTTP 客户端。
@@ -165,7 +190,10 @@ class BrowserStream:
         # 每次启动用全新临时配置目录, 不残留历史记录/Cookie(隔离由临时 profile 承担,
         # 不使用 --incognito: 无痕模式下 CDP 默认 context 的 cookie API
         # (context.cookies()/add_cookies)会失效, 见 docs/cookie-detection-optimization.md)
-        self._profile_dir = tempfile.mkdtemp(prefix="tmp/chrome-profile-", dir=str(PROJECT_ROOT))
+        CHROME_PROFILE_ROOT.mkdir(parents=True, exist_ok=True)
+        self._profile_dir = tempfile.mkdtemp(
+            prefix="profile-", dir=str(CHROME_PROFILE_ROOT)
+        )
         self.chrome_args = [
             chrome_path,
             "--no-sandbox",
@@ -429,6 +457,27 @@ class BrowserStream:
                        restart: bool = True,
                        on_output: Callable[[str], Any] | None = None,
                        on_credential_saved: Callable[[Any, str], Any] | None = None) -> dict:
+        """执行代码的外层入口: 单实例只允许一个执行租约。
+
+        已有脚本在运行时直接抛 BrowserBusy, 避免两个 Agent/运行同时重启 Chrome。
+        """
+        if not self.try_acquire_run():
+            raise BrowserBusy("浏览器正在执行其他任务, 请等待当前运行结束")
+        try:
+            return await self._run_code_impl(
+                code,
+                login_gate=login_gate,
+                restart=restart,
+                on_output=on_output,
+                on_credential_saved=on_credential_saved,
+            )
+        finally:
+            self.release_run()
+
+    async def _run_code_impl(self, code: str, login_gate: Any = None,
+                             restart: bool = True,
+                             on_output: Callable[[str], Any] | None = None,
+                             on_credential_saved: Callable[[Any, str], Any] | None = None) -> dict:
         """执行用户编写的 Playwright 代码(async 风格)。
 
         restart=True(默认)时执行前先重启 Chrome 得到全新无痕浏览器(保留 Xvfb 与抓屏);
@@ -465,11 +514,23 @@ class BrowserStream:
 
             def __init__(self) -> None:
                 self._buf = StringIO()
+                self._kept = 0
+                self._truncated = False
 
             def write(self, s: str) -> int:
-                self._buf.write(s)
-                if s and on_output is not None:
-                    on_output(s)
+                if s:
+                    remaining = _MAX_OUTPUT_CHARS - self._kept
+                    if remaining > 0:
+                        self._buf.write(s[:remaining])
+                        self._kept += min(len(s), remaining)
+                    if len(s) > remaining:
+                        if not self._truncated:
+                            self._buf.write(
+                                f"\n...[输出超过 {_MAX_OUTPUT_CHARS} 字符, 已截断]"
+                            )
+                            self._truncated = True
+                    if on_output is not None:
+                        on_output(s)
                 return len(s)
 
             def flush(self) -> None:
@@ -540,7 +601,7 @@ class BrowserStream:
             # 用户取消登录: 脚本立即终止, 返回明确结果而非异常堆栈
             saved = env_obj.saved_items() if env_obj is not None else []
             return {"ok": False, "output": out.getvalue(), "error": "用户取消登录", "saved": saved}
-        except LoginComplete as exc:
+        except LoginComplete:
             # login 模式: 凭据保存成功, 编排层结束运行(非错误)
             saved = env_obj.saved_items() if env_obj is not None else []
             return {
@@ -566,6 +627,10 @@ class BrowserStream:
             return {"ok": False, "output": out.getvalue(), "error": traceback.format_exc(), "saved": saved}
         finally:
             try:
+                if env_obj is not None:
+                    close = getattr(env_obj, "close", None)
+                    if close is not None:
+                        await close()
                 if browser is not None:
                     await browser.close()
                 if pw is not None:
@@ -575,17 +640,37 @@ class BrowserStream:
 
     @staticmethod
     async def _exec_async(code: str, env: dict) -> None:
-        """把用户脚本作为 async 函数包装执行, 支持顶层 await。
+        """执行用户脚本, 支持顶层 await。
 
-        脚本语句会整体缩进包进 `async def __run__()` 中, 使其能直接使用
-        `await page.goto(...)` 等顶层 await 写法。
+        通过 PyCF_ALLOW_TOP_LEVEL_AWAIT 编译后 eval: 保留原始缩进/行号,
+        不会像"逐行缩进包进 async def"那样破坏三引号字符串内容。
         """
-        lines = code.splitlines()
-        if not any(line.strip() for line in lines):
+        if not code.strip():
             return
-        indented = "async def __run__():\n" + "\n".join(
-            ("    " + line if line.strip() else line) for line in lines
-        )
-        namespace: dict = {}
-        exec(compile(indented, "<playwright-code>", "exec"), env, namespace)
-        await namespace["__run__"]()
+        import ast
+        import inspect
+
+        compiled = None
+        try:
+            compiled = compile(
+                code,
+                "<playwright-code>",
+                "exec",
+                flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+            )
+        except SyntaxError as exc:
+            if "'return' outside function" not in str(exc):
+                raise
+            # 兼容旧脚本的顶层 return: 包进 async def 后可执行(极少数历史脚本
+            # 才会走这里; 此时三引号字符串的缩进不保证原样)。
+            indented = "async def __run__():\n" + "\n".join(
+                ("    " + line if line.strip() else line)
+                for line in code.splitlines()
+            )
+            namespace: dict = {}
+            exec(compile(indented, "<playwright-code>", "exec"), env, namespace)
+            await namespace["__run__"]()
+            return
+        result = eval(compiled, env, env)  # noqa: S307 - 沙箱环境由调用方构造
+        if inspect.isawaitable(result):
+            await result

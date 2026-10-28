@@ -1,7 +1,7 @@
 """人机验证处理包: 证据采集 → 类型判定(大模型为主/规则辅助) → 求解 → 出口复核。
 
 产物运行期由 CrawlerEnv.verify_check 上下文驱动, 超限抛 VerificationFailed 结束本次运行;
-Agent 开发期由 verify_gate 的会话内弹卡(仅 solve_verification 工具链)驱动。
+Agent 开发期由 detect_verification / solve_verification 工具驱动(不弹窗)。
 详见 docs/human-verification-solution.md。
 """
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from deepagents import create_deep_agent
+from deepagents.middleware.filesystem import FilesystemPermission
 from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddleware
 
 from .bridge import BrowserBridge
@@ -42,10 +43,20 @@ def build_agent(
             AgentEventMiddleware(session),
             TodoListMiddleware(system_prompt=""),
             ModelCallLimitMiddleware(
-                thread_limit=160, run_limit=160, exit_behavior="end"
+                # 只限制单轮, 不限制整个会话: thread_limit 会跨轮次累计,
+                # 长会话达到上限后会静默结束(由产品层面单 Agent 锁控制并发)。
+                thread_limit=None, run_limit=160, exit_behavior="end"
             ),
         ],
         backend=AGENT_BACKEND,
+        permissions=[
+            # 历史遗留 profile 仍可能在 tmp/ 下; 禁止 Agent 通过文件工具读取。
+            FilesystemPermission(
+                operations=["read", "write"],
+                paths=["/chrome-profile-*/**", "/chrome-profile-*"],
+                mode="deny",
+            ),
+        ],
         checkpointer=checkpointer,
         name="crawler-agent",
     )

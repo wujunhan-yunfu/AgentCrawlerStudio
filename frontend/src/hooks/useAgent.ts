@@ -32,6 +32,9 @@ interface AgentEvent {
   type: string;
   session_id?: string;
   crawler_id?: string;
+  seq?: number;
+  epoch?: string;
+  has_image?: boolean;
   title?: string;
   qid?: string;
   questions?: AgentQuestion[];
@@ -65,6 +68,8 @@ interface AgentEvent {
 
 export interface AgentState {
   connected: boolean;
+  /** 是否有任意会话正在运行/等待确认(产品只支持单 Agent 运行) */
+  busy: boolean;
   crawlerId: string | null;
   sessions: AgentSessionInfo[];
   activeId: string | null;
@@ -113,6 +118,7 @@ const HIDDEN_TOOL_NAMES = new Set(["write_todos", "ask_user"]);
 // 按 crawler_id 隔离, 键前缀 + crawler_id 作为 localStorage key。
 const UNREAD_KEY_PREFIX = "agent.unread.";
 const SEEN_KEY_PREFIX = "agent.seen.";
+const ACTIVE_KEY_PREFIX = "agent.active.";
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -145,6 +151,7 @@ const ACTIVITY_TYPES = new Set([
   "answer",
   "editor_code",
   "login_request",
+  "login_timeout",
   "login_success",
   "done",
   "error",
@@ -190,11 +197,14 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
   plan: AgentPlan | null;
   todos: AgentTodo[];
   saved: AgentSavedItem[];
+  question: { qid?: string; questions: AgentQuestion[] } | null;
 } {
   const feed: AgentFeedItem[] = [];
   let plan: AgentPlan | null = null;
   let todos: AgentTodo[] = [];
   let saved: AgentSavedItem[] = [];
+  // 当前仍未被回答的问卷(刷新/切换会话后恢复输入区表单)
+  let question: { qid?: string; questions: AgentQuestion[] } | null = null;
   // 重建 diff 卡片时, 记录上一次 set_editor_code 写回的代码(跨轮次重置)
   let lastCode: string | null = null;
   // 记录当前轮次产生的规划, 遇到该轮 AGENT 回答时在回答上方插入规划卡片
@@ -249,7 +259,13 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
       pendingPlan = (meta.plan as AgentPlan) ?? null;
     } else if (m.type === "todos") {
       todos = (meta.todos as AgentTodo[]) ?? [];
+    } else if (m.type === "question") {
+      question = {
+        qid: meta.qid as string | undefined,
+        questions: (meta.questions as AgentQuestion[]) ?? [],
+      };
     } else if (m.type === "answer") {
+      question = null;
       pendingAnswerEvent = true;
       feed.push({
         kind: "answer",
@@ -293,6 +309,7 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
               answer: { questions: pendingAskUser ?? [], answers },
             });
           }
+          question = null;
           pendingAskUser = null;
           pendingAnswerEvent = false;
         }
@@ -346,7 +363,7 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
       }),
     };
   }
-  return { feed, plan, todos, saved };
+  return { feed, plan, todos, saved, question };
 }
 
 export function useAgent(): AgentState {
@@ -389,6 +406,9 @@ export function useAgent(): AgentState {
   const editorBaseRef = useRef<string | null>(null);
   const turnSeqRef = useRef(0);
   const turnSeqBySessionRef = useRef<Record<string, number>>({});
+  // 事件去重: 后端每次启动有新 epoch, 每个会话事件有单调 seq。
+  const epochRef = useRef<string>("");
+  const lastSeqRef = useRef<Record<string, number>>({});
 
   const initSessionRefs = useCallback((sid: string) => {
     if (feedsRef.current[sid] !== undefined) return;
@@ -421,6 +441,36 @@ export function useAgent(): AgentState {
     setQid(qidRefs.current[sid] ?? null);
     setTurnSeq(turnSeqBySessionRef.current[sid] ?? 0);
   }, []);
+
+  const restoreQuestion = useCallback(
+    (
+      sid: string,
+      fallback?: { qid?: string; questions?: AgentQuestion[] } | null,
+    ) => {
+      const info = sessionsRef.current[sid];
+      const q = fallback ?? info?.question ?? null;
+      const questions = q?.questions ?? [];
+      // 只有会话仍处于 waiting 才恢复表单; 已结束/中断会话的历史 question
+      // 事件不能重新弹出一个永远无法作答的问卷。
+      if (questions.length > 0 && info?.status === "waiting") {
+        questionsRefs.current[sid] = questions;
+        qidRefs.current[sid] = q?.qid ?? null;
+        if (sid === activeRef.current) {
+          setQuestions(questions);
+          setQid(q?.qid ?? null);
+        }
+      } else if (info?.status !== "waiting") {
+        // 没有待答问题且不在 waiting: 清掉可能残留的旧表单。
+        questionsRefs.current[sid] = [];
+        qidRefs.current[sid] = null;
+        if (sid === activeRef.current) {
+          setQuestions([]);
+          setQid(null);
+        }
+      }
+    },
+    [],
+  );
 
   const syncSessions = useCallback(() => {
     setSessions(Object.values(sessionsRef.current));
@@ -482,6 +532,7 @@ export function useAgent(): AgentState {
     initSessionRefs(id);
     const current = feedsRef.current[id] ?? [];
     if (current.length > 0) {
+      restoreQuestion(id);
       setActiveStates(id);
       return;
     }
@@ -508,6 +559,7 @@ export function useAgent(): AgentState {
       plansRef.current[id] = planVal;
       todosRefs.current[id] = built.todos;
       savedRefs.current[id] = built.saved;
+      restoreQuestion(id, built.question);
       if (statusRefs.current[id] === "idle" && built.feed.length) {
         statusRefs.current[id] = "done";
       }
@@ -516,7 +568,7 @@ export function useAgent(): AgentState {
       /* 忽略历史加载失败 */
     }
     setActiveStates(id);
-  }, [initSessionRefs, setActiveStates, markSeen]);
+  }, [initSessionRefs, setActiveStates, restoreQuestion, markSeen]);
 
   const pushToFeed = useCallback((sid: string, item: AgentFeedItem) => {
     initSessionRefs(sid);
@@ -618,6 +670,7 @@ export function useAgent(): AgentState {
     if (activeRef.current === sid) {
       activeRef.current = null;
       setActiveId(null);
+      saveJSON(ACTIVE_KEY_PREFIX + (cid ?? "default"), null);
       setFeed([]);
       setStreaming("");
       setStatus("idle");
@@ -645,27 +698,42 @@ export function useAgent(): AgentState {
     activeRef.current = id;
     setActiveId(id);
     initSessionRefs(id);
+    saveJSON(ACTIVE_KEY_PREFIX + (crawlerIdRef.current ?? "default"), id);
     const info = sessionsRef.current[id];
     if (info) {
       statusRefs.current[id] = (info.status as AgentStatus) || "idle";
-      // 会话仍处于等待确认: 用服务端带回的问卷恢复输入区表单(刷新页面后仍可作答)
-      if (info.question?.questions?.length) {
-        questionsRefs.current[id] = info.question.questions;
-        qidRefs.current[id] = info.question.qid ?? null;
-      }
     }
+    restoreQuestion(id);
     // 查看即清除未读角标
     unreadRefs.current = { ...unreadRefs.current, [id]: false };
     setUnread(unreadRefs.current);
     persistUnread(crawlerIdRef.current);
     void loadSessionFeed(id);
-  }, [initSessionRefs, loadSessionFeed, persistUnread, markSeen]);
+  }, [initSessionRefs, loadSessionFeed, persistUnread, markSeen, restoreQuestion]);
 
   const handleEvent = useCallback((msg: AgentEvent) => {
     const sid = msg.session_id ?? null;
+    if (sid && typeof msg.seq === "number") {
+      // 重连会回放后端缓冲; 已处理过的 seq 直接丢弃, 避免重复消息/工具卡片。
+      const last = lastSeqRef.current[sid] ?? 0;
+      if (msg.seq <= last) return;
+      lastSeqRef.current[sid] = msg.seq;
+    }
     if (sid && ACTIVITY_TYPES.has(msg.type)) markActivity(sid);
     switch (msg.type) {
       case "hello": {
+        if (msg.epoch && msg.epoch !== epochRef.current) {
+          // 后端进程重启: seq 从头开始, 必须清空去重游标与本地 feed,
+          // 再由历史接口恢复当前会话, 否则新事件会被旧的 seq 游标全部丢弃。
+          epochRef.current = msg.epoch;
+          lastSeqRef.current = {};
+          feedsRef.current = {};
+          streamingRefs.current = {};
+          if (activeRef.current) {
+            initSessionRefs(activeRef.current);
+            void loadSessionFeed(activeRef.current);
+          }
+        }
         if (msg.crawler_id) {
           crawlerIdRef.current = msg.crawler_id;
           setCrawlerId(msg.crawler_id);
@@ -692,8 +760,28 @@ export function useAgent(): AgentState {
         unreadRefs.current = unreadInit;
         setUnread(unreadInit);
         persistUnread(cid);
-        // 刷新后停在「新对话」界面: 不自动还原上次查看/运行中的会话。
-        // 用户手动点开会话时由 selectSession 加载其历史与运行进度。
+        // 刷新/重开窗口: 若本地记录了上次查看的会话, 自动回到该会话,
+        // 并从 hello 携带的 question 恢复待回答的问卷。
+        const active = activeRef.current;
+        if (active && !next[active]) {
+          activeRef.current = null;
+          setActiveId(null);
+          saveJSON(ACTIVE_KEY_PREFIX + (cid ?? "default"), null);
+        } else if (active) {
+          statusRefs.current[active] = (next[active].status as AgentStatus) || "idle";
+          restoreQuestion(active);
+          setActiveStates(active);
+        } else {
+          const stored = loadJSON<string | null>(
+            ACTIVE_KEY_PREFIX + (cid ?? "default"),
+            null,
+          );
+          if (stored && next[stored]) {
+            selectSession(stored);
+          } else if (stored) {
+            saveJSON(ACTIVE_KEY_PREFIX + (cid ?? "default"), null);
+          }
+        }
         break;
       }
       case "session_start": {
@@ -813,18 +901,31 @@ export function useAgent(): AgentState {
       case "question": {
         if (!sid) break;
         flushStreaming(sid);
-        questionsRefs.current[sid] = msg.questions ?? [];
-        qidRefs.current[sid] = msg.qid ?? null;
+        const questions = msg.questions ?? [];
+        const qid = msg.qid ?? null;
+        questionsRefs.current[sid] = questions;
+        qidRefs.current[sid] = qid;
         if (sid === activeRef.current) {
-          setQuestions(questionsRefs.current[sid]);
-          setQid(qidRefs.current[sid]);
+          setQuestions(questions);
+          setQid(qid);
         }
         setSessionStatus(sid, "waiting");
+        updateSessionInfo(sid, {
+          status: "waiting",
+          question: { qid: qid ?? undefined, questions },
+        });
         break;
       }
       case "answer": {
         if (!sid) break;
         flushStreaming(sid);
+        questionsRefs.current[sid] = [];
+        qidRefs.current[sid] = null;
+        if (sid === activeRef.current) {
+          setQuestions([]);
+          setQid(null);
+        }
+        updateSessionInfo(sid, { question: null });
         pushToFeed(sid, {
           kind: "answer",
           answer: { questions: msg.questions ?? [], answers: msg.answers ?? {} },
@@ -840,6 +941,7 @@ export function useAgent(): AgentState {
           setQid(null);
         }
         setSessionStatus(sid, "running");
+        updateSessionInfo(sid, { status: "running", question: null });
         break;
       }
       case "login_request": {
@@ -886,6 +988,21 @@ export function useAgent(): AgentState {
         pushToFeed(sid, { kind: "status", content: text });
         break;
       }
+      case "login_timeout": {
+        if (!sid) break;
+        flushStreaming(sid);
+        loginRefs.current[sid] = null;
+        if (sid === activeRef.current) {
+          setLogin(null);
+          window.dispatchEvent(new Event("agent:login-unzoom"));
+        }
+        pushToFeed(sid, {
+          kind: "status",
+          content: msg.message ?? t("agent.loginTimeout"),
+        });
+        setSessionStatus(sid, "running");
+        break;
+      }
       case "editor_code": {
         editorCodeRef.current = msg.code ?? null;
         if (msg.base !== undefined) editorBaseRef.current = msg.base ?? null;
@@ -916,7 +1033,7 @@ export function useAgent(): AgentState {
           }
         }
         setSessionStatus(sid, "done");
-        updateSessionInfo(sid, { last_message: msg.result ?? "" });
+        updateSessionInfo(sid, { last_message: msg.result ?? "", question: null });
         finalizeWithBackend(sid, "done");
         break;
       }
@@ -926,11 +1043,13 @@ export function useAgent(): AgentState {
         finalizePlan(sid);
         pushToFeed(sid, { kind: "error", content: msg.error ?? t("common.unknownError") });
         setSessionStatus(sid, "error");
+        updateSessionInfo(sid, { question: null });
         finalizeWithBackend(sid, "error");
         break;
       }
       case "session_end": {
         if (!sid) break;
+        updateSessionInfo(sid, { question: null });
         if (msg.reason === "cancelled") {
           finalizePlan(sid);
           setSessionStatus(sid, "cancelled");
@@ -960,6 +1079,9 @@ export function useAgent(): AgentState {
     setSessionStatus,
     finalizePlan,
     removeSessionLocal,
+    loadSessionFeed,
+    restoreQuestion,
+    selectSession,
     markActivity,
     finalizeWithBackend,
     persistUnread,
@@ -1013,6 +1135,7 @@ export function useAgent(): AgentState {
     );
     activeRef.current = null;
     setActiveId(null);
+    saveJSON(ACTIVE_KEY_PREFIX + (crawlerIdRef.current ?? "default"), null);
     setFeed([]);
     setStreaming("");
     setStatus("idle");
@@ -1197,9 +1320,13 @@ export function useAgent(): AgentState {
   }, [pushToFeed, updateSessionInfo]);
 
   const activeSession = activeId ? (sessionsRef.current[activeId] ?? null) : null;
+  const busy = sessions.some(
+    (s) => s.status === "running" || s.status === "waiting",
+  ) || status === "running" || status === "waiting";
 
   return {
     connected,
+    busy,
     crawlerId,
     sessions,
     activeId,

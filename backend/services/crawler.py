@@ -387,6 +387,13 @@ class CrawlerEnv:
         answers = await self._login_gate.request(payload)
         if answers.get("cancelled"):
             raise LoginCancelled("用户取消登录")
+        if answers.get("timeout"):
+            return {
+                "ok": False,
+                "method": resolved,
+                "url": info.get("url") or url,
+                "error": answers.get("error") or "登录等待超时",
+            }
         if resolved == "qr":
             url = answers.get("url") or ""
             if not url:
@@ -630,6 +637,17 @@ class CrawlerEnv:
             )
             self._ticket_coll = self._mongo_client[self.cfg.mongo_db][TICKET_COLLECTION]
         return self._ticket_coll
+
+    async def close(self) -> None:
+        """释放运行期创建的 Mongo client(避免每次 run_code 泄漏连接)。"""
+        client = self._mongo_client
+        self._mongo_client = None
+        self._ticket_coll = None
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     async def get_login_ticket(self, host: str) -> Any:
         """从 MongoDB 读取指定 host 下储存的 ticket, 未找到返回 None。

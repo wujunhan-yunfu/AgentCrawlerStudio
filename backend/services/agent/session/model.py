@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..core.text import cap_text
 from .event import PERSISTED_EVENT_TYPES, EventHub
 
 
@@ -19,7 +20,7 @@ class AgentSession:
     title: str
     hub: EventHub
     created_at: float = field(default_factory=time.time)
-    status: str = "idle"  # idle / running / waiting / done / error / cancelled
+    status: str = "idle"  # idle / running / waiting / done / error / cancelled / interrupted
     plan: dict[str, Any] | None = None
     question: dict[str, Any] | None = None
     answer_future: asyncio.Future | None = None
@@ -49,6 +50,17 @@ class AgentSession:
     def emit(self, event: dict[str, Any]) -> None:
         event.setdefault("session_id", self.id)
         event.setdefault("crawler_id", self.crawler_id)
+        if event.get("type") == "saved" and isinstance(event.get("saved"), list):
+            # 事件只保留预览: 完整产物通过下载/详情读取, 避免 WS/Mongo 被大内容撑爆。
+            preview = []
+            for item in event["saved"]:
+                if isinstance(item, dict):
+                    preview.append(
+                        {**item, "content": cap_text(item.get("content", ""), 2000)}
+                    )
+                else:
+                    preview.append({"content": cap_text(item, 2000)})
+            event["saved"] = preview
         self.hub.emit(event)
         self._enqueue_persist(event)
 

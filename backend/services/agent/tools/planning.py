@@ -78,6 +78,8 @@ def build_planning_tools(session: AgentSession) -> list:
             "questions": questions_data,
         }
         answers = interrupt(payload)
+        if isinstance(answers, dict) and answers.get("_timeout"):
+            return "用户未在时限内响应问题, 已自动继续; 请根据已有信息决定下一步, 必要时重新询问。"
         # 用户回答后广播一条回答事件: 前端据此以「问题 + 答案」卡片展示,
         # 而不是把工具返回的原始 JSON 直接呈现给用户。
         session.emit(

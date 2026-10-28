@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from .classify import build_classifier
-from .coordinator import VerificationCoordinator, build_coordinator, should_engage
+from .coordinator import VerificationCoordinator, should_engage
 from .evidence import parse_evidence
 from .exceptions import VerificationFailed
 from .ops import PlaywrightOps

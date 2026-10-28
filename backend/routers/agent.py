@@ -11,11 +11,17 @@ import json
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from ..services.agent.runner import AgentBusyError
+
 router = APIRouter(tags=["agent"])
 
 
 def _manager(request: Request):
     return request.app.state.agent
+
+
+def _busy_error(exc: AgentBusyError) -> HTTPException:
+    return HTTPException(status_code=409, detail=str(exc))
 
 
 class SessionCreateRequest(BaseModel):
@@ -75,9 +81,14 @@ class EditorCodeRequest(BaseModel):
 
 @router.get("/agent/info")
 async def agent_info(request: Request) -> dict:
-    """返回当前后端配置的 crawler_id(会话隔离标识)。"""
+    """返回当前后端配置的 crawler_id(会话隔离标识)与单 Agent 运行状态。"""
     cfg = request.app.state.cfg
-    return {"crawler_id": (cfg.crawler_id or "default") if cfg else "default"}
+    manager = _manager(request)
+    return {
+        "crawler_id": (cfg.crawler_id or "default") if cfg else "default",
+        "busy": bool(getattr(manager, "is_busy", lambda: False)()),
+        "active_session_id": getattr(manager, "active_session_id", lambda: None)(),
+    }
 
 
 @router.post("/agent/session")
@@ -86,6 +97,8 @@ async def agent_session_create(request: Request, req: SessionCreateRequest) -> d
     manager = _manager(request)
     try:
         session = await manager.create_session(req.crawler_id, req.title)
+    except AgentBusyError as exc:
+        raise _busy_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -121,6 +134,8 @@ async def agent_session_message(request: Request, session_id: str,
         session = await manager.send_message(req.crawler_id, session_id, req.content)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except AgentBusyError as exc:
+        raise _busy_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -157,6 +172,8 @@ async def agent_start(request: Request, req: StartRequest) -> dict:
     manager = _manager(request)
     try:
         session = await manager.start(req.task)
+    except AgentBusyError as exc:
+        raise _busy_error(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -185,17 +202,30 @@ async def editor_code_set(request: Request, req: EditorCodeRequest) -> dict:
 
 @router.websocket("/ws/agent")
 async def ws_agent(ws: WebSocket):
-    """订阅 Agent 事件流。query 参数 ?session=<id> 可只收某个会话的事件。"""
+    """订阅 Agent 事件流。query: ?session=<id>&since=<seq> 可增量回放某会话。"""
     await ws.accept()
     session_id = ws.query_params.get("session")
+    try:
+        since = int(ws.query_params.get("since") or 0)
+    except ValueError:
+        since = 0
     manager = ws.app.state.agent
-    sub = manager.hub.subscribe()
+    sub = manager.hub.subscribe(session_id, since)
     try:
         hello_sessions = await manager.list_sessions(None)
         await ws.send_text(json.dumps({
             "type": "hello",
             "crawler_id": manager.default_crawler_id(),
             "sessions": hello_sessions,
+            "epoch": manager.hub.epoch,
+            "seqs": {
+                s.get("session_id") or s.get("id"): manager.hub.latest_seq(
+                    s.get("session_id") or s.get("id") or ""
+                )
+                for s in hello_sessions
+            },
+            "busy": bool(getattr(manager, "is_busy", lambda: False)()),
+            "active_session_id": getattr(manager, "active_session_id", lambda: None)(),
         }, ensure_ascii=False))
         while True:
             try:

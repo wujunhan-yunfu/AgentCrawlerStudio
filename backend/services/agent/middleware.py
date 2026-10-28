@@ -105,27 +105,56 @@ class AgentEventMiddleware(AgentMiddleware[Any, Any, Any]):
         handler: Callable[[ToolCallRequest], Awaitable[Any]],
     ) -> Any:
         name = request.tool_call.get("name")
-        result = await handler(request)
+        try:
+            result = await handler(request)
+        except Exception as exc:
+            # 工具异常也必须发 tool_result, 否则前端工具卡片会一直停在 running。
+            content = f"{type(exc).__name__}: {exc}"
+            self._session.emit(
+                {
+                    "type": "tool_result",
+                    "name": name,
+                    "id": request.tool_call.get("id"),
+                    "content": cap_text(content, _MAX_RESULT),
+                    "error": cap_text(content, _MAX_RESULT),
+                }
+            )
+            raise
         content = ""
         error = ""
+        has_image = False
         if isinstance(result, Command):
             content = "命令已执行"
         else:
-            text = getattr(result, "content", None)
-            if text is not None:
-                content = cap_text(text, _MAX_RESULT)
+            raw = getattr(result, "content", None)
+            if raw is not None:
+                if isinstance(raw, list):
+                    # 多模态工具(如 browser_screenshot): 只把文本块发给前端/落库,
+                    # 图片 base64 不进入事件, 避免 WS/Mongo 被 data URI 撑爆。
+                    parts = []
+                    for block in raw:
+                        if isinstance(block, dict) and block.get("type") == "image_url":
+                            has_image = True
+                        elif isinstance(block, str):
+                            parts.append(block)
+                        elif isinstance(block, dict) and isinstance(block.get("text"), str):
+                            parts.append(block["text"])
+                    content = cap_text("".join(parts), _MAX_RESULT)
+                else:
+                    content = cap_text(raw, _MAX_RESULT)
             status = getattr(result, "status", None)
             if status == "error":
                 error = content
-        self._session.emit(
-            {
-                "type": "tool_result",
-                "name": name,
-                "id": request.tool_call.get("id"),
-                "content": content,
-                "error": error,
-            }
-        )
+        event = {
+            "type": "tool_result",
+            "name": name,
+            "id": request.tool_call.get("id"),
+            "content": content,
+            "error": error,
+        }
+        if has_image:
+            event["has_image"] = True
+        self._session.emit(event)
         return result
 
     async def awrap_model_call(

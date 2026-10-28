@@ -14,9 +14,9 @@ import asyncio
 import contextlib
 import importlib.util
 import json
+import shutil
 import sys
 import tempfile
-import time
 import traceback
 import uuid
 from itertools import islice
@@ -96,6 +96,16 @@ class _MongoTicketStore:
             upsert=True,
         )
         return ticket
+
+    async def close(self) -> None:
+        client = self._client
+        self._client = None
+        self._coll = None
+        if client is not None:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 class _SaveManager:
@@ -429,8 +439,9 @@ async def execute(
     launcher: 可注入的启动器(async callable(cfg, headless) -> _Launched), 测试用。
     """
     headless = resolve_headless(cfg) if headless is None else bool(headless)
+    temp_workspace = output_dir is None
     workspace = output_dir or Path(tempfile.mkdtemp(prefix="acs-run-"))
-    mod = _load_crawler_module(code, workspace)
+    owns_tickets = tickets is None
     tickets = tickets or _MongoTicketStore(cfg)
     saver = _SaveManager(
         bool(getattr(cfg, "dev_limit", True)),
@@ -441,6 +452,7 @@ async def execute(
     )
     launched: _Launched | None = None
     try:
+        mod = _load_crawler_module(code, workspace)
         launched = await (launcher or _launch)(cfg, headless)
         page = launched.page
         context = launched.context
@@ -479,3 +491,7 @@ async def execute(
     finally:
         if launched is not None:
             await launched.close()
+        if owns_tickets:
+            await tickets.close()
+        if temp_workspace:
+            await asyncio.to_thread(shutil.rmtree, workspace, True)

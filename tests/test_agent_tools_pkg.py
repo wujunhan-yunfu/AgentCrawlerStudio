@@ -31,6 +31,7 @@ async def test_build_tools_returns_all():
     assert "browser_pages" in names
     assert "browser_evaluate" in names
     assert "page_analyze" in names
+    assert "browser_network" in names
     assert "browser_screenshot" in names
     assert "browser_run_code" in names
     assert "http_request" in names
@@ -41,7 +42,7 @@ async def test_build_tools_returns_all():
     assert "detect_verification" in names
     assert "solve_verification" in names
     assert "verify_status" in names
-    assert len(tools) == 17
+    assert len(tools) == 18
 
 
 # --------------------------------------------------------------------------- build_agent

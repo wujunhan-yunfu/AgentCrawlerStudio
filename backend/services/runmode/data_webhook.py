@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import time
 import uuid
 from typing import Any
 
@@ -64,7 +63,8 @@ class DataCollector:
     def start(self) -> None:
         if not self.enabled or self._task is not None:
             return
-        self._queue = asyncio.Queue()
+        # 有界队列 + 背压: 下游 webhook 慢时不要让 save_content 无限堆内存。
+        self._queue = asyncio.Queue(maxsize=256)
         self._task = asyncio.get_running_loop().create_task(self._run())
 
     async def _run(self) -> None:
@@ -85,7 +85,7 @@ class DataCollector:
         else:
             if self._queue is None:
                 self.start()
-            self._queue.put_nowait(payload)
+            await self._queue.put(payload)
 
     def _build_payload(self, item: dict[str, Any]) -> dict[str, Any]:
         fmt = (item.get("fmt") or "txt")

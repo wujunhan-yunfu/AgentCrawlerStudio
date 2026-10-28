@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from langchain_core.tools import tool
 
+from ...browser import BrowserBusy
 from ..core.fs import (
     AGENT_BACKEND_DIR,
     agent_real_path,
@@ -66,9 +68,16 @@ def build_editor_tools(
         except Exception as exc:  # noqa: BLE001
             return f"临时脚本生成失败: {exc}"
         session.emit({"type": "debug_script", "path": vpath, "name": name})
-        result = await bridge.run_code(
-            code, login_gate=LoginGate(session, bridge)
-        )
+        try:
+            result = await bridge.run_code(
+                code, login_gate=LoginGate(session, bridge)
+            )
+        except asyncio.TimeoutError:
+            return f"临时脚本: {vpath}\n运行失败: 执行超时(默认 300s)"
+        except BrowserBusy as exc:
+            return f"临时脚本: {vpath}\n运行失败: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            return f"临时脚本: {vpath}\n运行失败: {type(exc).__name__}: {exc}"
         saved = result.get("saved") or []
         if saved:
             session.emit({"type": "saved", "saved": saved})

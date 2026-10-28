@@ -487,11 +487,3 @@ async def test_gate_monitor_qr_no_future(session, gate):
 async def test_gate_finish(session, gate):
     await gate.finish("qr", "http://home")
     assert session.hub._buffer[-1]["type"] == "login_success"
-
-
-async def test_gate_persist_error(session, gate):
-    def boom(session, event):
-        raise RuntimeError("persist fail")
-
-    session.persist = boom
-    await gate._persist({"type": "x"})

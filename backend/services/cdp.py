@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import json
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 import httpx
 import websockets
@@ -29,8 +29,6 @@ _SCAN_INTERVAL = 1.0
 _MAX_CDP_FRAME = 256 * 1024 * 1024
 _STACK_MAX_FRAMES = 100
 _STACK_MAX_CHARS = 16 * 1024
-
-EventHandler = Callable[[Any, str, dict[str, Any]], Awaitable[bool]]
 
 
 class Subscriber:
@@ -295,7 +293,7 @@ class CDPManager:
         session = CDPSession(ws_url)
         self._sessions[ws_url] = session
         session.queue = asyncio.Queue()
-        consumer = asyncio.create_task(self._process_session_events(session))
+        _ = asyncio.create_task(self._process_session_events(session))
         reader: asyncio.Task | None = None
         try:
             async with websockets.connect(ws_url, max_size=_MAX_CDP_FRAME) as ws:

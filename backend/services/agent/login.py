@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import re
 import uuid
 from urllib.parse import urlsplit
@@ -460,7 +459,10 @@ class LoginGate:
     # ---------------------------------------------------------- 交互主流程
 
     async def request(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """发 login_request 事件, 挂起等待用户答复; 返回 answers。"""
+        """发 login_request 事件, 挂起等待用户答复; 返回 answers。
+
+        timeout 来自 payload(默认 180s), 超时后返回 timeout 结果而不是永久挂起。
+        """
         session = self.session
         loop = asyncio.get_running_loop()
         session.login = payload
@@ -477,14 +479,29 @@ class LoginGate:
         monitor = None
         if payload.get("login_type") == "qr":
             monitor = loop.create_task(self._monitor_qr(payload))
+        timeout = float(payload.get("timeout") or 180)
         try:
-            answers = await session.login_future
+            if timeout > 0:
+                answers = await asyncio.wait_for(session.login_future, timeout=timeout)
+            else:
+                answers = await session.login_future
+        except asyncio.TimeoutError:
+            msg = f"登录等待超时({timeout:.0f}s), 请重试"
+            session.emit(
+                {
+                    "type": "login_timeout",
+                    "qid": payload.get("qid"),
+                    "message": msg,
+                }
+            )
+            session.emit({"type": "status", "content": msg})
+            answers = {"ok": False, "timeout": True, "error": msg}
         finally:
             if monitor is not None and not monitor.done():
                 monitor.cancel()
             session.login_future = None
             session.login = None
-        session.status = "running"
+            session.status = "running"
         return answers
 
     async def send_code(self) -> dict[str, Any]:
@@ -551,6 +568,15 @@ class LoginGate:
                 return
             if loop.time() > deadline:
                 session.emit({"type": "status", "content": "等待扫码超时，请确认已扫码后点击\"完成扫码\"继续"})
+                session.emit(
+                    {
+                        "type": "login_timeout",
+                        "qid": payload.get("qid"),
+                        "message": "等待扫码超时",
+                    }
+                )
+                if not fut.done():
+                    fut.set_result({"ok": False, "timeout": True, "error": "等待扫码超时"})
                 return
             r = await self.bridge.evaluate("location.href")
             cur = ""
@@ -563,11 +589,3 @@ class LoginGate:
     async def finish(self, method: str, url: str) -> None:
         """登录成功完成: 向前端广播 login_success(由事件持久化队列落库)。"""
         self.session.emit({"type": "login_success", "method": method, "url": url})
-
-    async def _persist(self, event: dict[str, Any]) -> None:
-        persist = getattr(self.session, "persist", None)
-        if persist is not None:
-            try:
-                await persist(self.session, event)
-            except Exception:  # noqa: BLE001
-                pass

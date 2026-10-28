@@ -14,7 +14,6 @@ from typing import Any, Awaitable, Callable
 
 from .classify import (
     TYPE_CHECKBOX,
-    TYPE_OCR,
     TYPE_POINTS,
     TYPE_SLIDER,
     Classifier,

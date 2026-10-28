@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
 
 from langchain_core.tools import tool
 
+from ...browser import BrowserBusy
 from ..core.fs import agent_sanitize
 from ..core.text import cap_text, collapse_cr
 from ..session.model import AgentSession
@@ -121,6 +123,27 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         return json.dumps(result.get("analysis"), ensure_ascii=False, indent=2)
 
     @tool
+    async def browser_network(limit: int = 50, url_filter: str = "") -> str:
+        """查看当前页面最近的网络请求(XHR/Fetch 等), 用于发现数据接口。
+
+        在页面加载/翻页/点击后调用, 可按 URL 片段过滤。返回方法/URL/状态/类型/
+        大小/耗时摘要; 只用于定位接口, 不要把它当作全量抓包。发现接口后可用
+        api_request 带着必要请求头进一步验证, 能直连接口时优先走 HTTP, 减少浏览器渲染。
+        Args:
+            limit: 最多返回条数, 默认 50, 最大 200。
+            url_filter: 可选 URL 子串过滤(如 /api/、list)。
+        Returns:
+            JSON 数组字符串; 无记录时返回空数组提示。
+        """
+        try:
+            items = bridge.network_recent(limit, url_filter)
+        except Exception as exc:  # noqa: BLE001
+            return f"获取网络请求失败: {exc}"
+        if not items:
+            return "[]（当前没有匹配的网络请求，请先导航/触发页面请求）"
+        return json.dumps(items, ensure_ascii=False, indent=2)
+
+    @tool
     async def browser_screenshot() -> list:
         """截取当前浏览器活动页面的画面, 作为图片直接交给模型查看(多模态)。
 
@@ -207,9 +230,16 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         Returns:
             执行结果字符串, 包括 ok/输出/错误/已保存内容等
         """
-        result = await bridge.run_code(
-            code, login_gate=LoginGate(session, bridge), restart=restart
-        )
+        try:
+            result = await bridge.run_code(
+                code, login_gate=LoginGate(session, bridge), restart=restart
+            )
+        except asyncio.TimeoutError:
+            return "运行失败: 脚本执行超时(默认 300s), 请缩小验证范围后重试"
+        except BrowserBusy as exc:
+            return f"运行失败: {exc}"
+        except Exception as exc:  # noqa: BLE001
+            return f"运行失败: {type(exc).__name__}: {exc}"
         saved = result.get("saved") or []
         if saved:
             session.emit({"type": "saved", "saved": saved})
@@ -229,6 +259,7 @@ def build_browser_tools(session: AgentSession, bridge: BrowserBridge) -> list:
         browser_pages,
         browser_evaluate,
         page_analyze,
+        browser_network,
         browser_screenshot,
         browser_run_code,
     ]

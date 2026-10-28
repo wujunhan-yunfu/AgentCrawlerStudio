@@ -135,6 +135,39 @@ class NetworkChannel:
 
     # ------------------------------------------------------------ 命令接口
 
+    def recent(self, limit: int = 50, url_filter: str = "") -> list[dict[str, Any]]:
+        """返回最近的网络请求摘要(供 Agent 发现 XHR/Fetch 接口)。
+
+        只返回方法/URL/状态/类型/大小/耗时等轻量字段, 不返回请求体/响应头。
+        """
+        limit = max(1, min(int(limit or 50), 200))
+        needle = (url_filter or "").strip().lower()
+        records = sorted(
+            self._records.values(),
+            key=lambda r: r.get("started") or 0,
+            reverse=True,
+        )
+        out: list[dict[str, Any]] = []
+        for r in records:
+            url = str(r.get("url") or "")
+            if needle and needle not in url.lower():
+                continue
+            out.append(
+                {
+                    "method": r.get("method"),
+                    "url": url[:500],
+                    "status": r.get("status"),
+                    "type": r.get("type"),
+                    "mimeType": r.get("mimeType"),
+                    "size": r.get("size"),
+                    "duration_ms": r.get("duration"),
+                    "error": r.get("error"),
+                }
+            )
+            if len(out) >= limit:
+                break
+        return out
+
     async def clear(self) -> dict[str, Any]:
         self._records.clear()
         self._session_of.clear()

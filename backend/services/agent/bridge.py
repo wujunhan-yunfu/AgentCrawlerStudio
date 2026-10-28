@@ -6,6 +6,7 @@ await 调用即可, 全程无线程、无阻塞。
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -116,9 +117,15 @@ class BrowserBridge:
         except (ValueError, TypeError):
             return {"ok": False, "error": "页面分析结果解析失败"}
 
+    def network_recent(self, limit: int = 50, url_filter: str = "") -> list[dict]:
+        return self.stream.network.recent(limit, url_filter)
+
     async def run_code(self, code: str, timeout: float = 300.0,
                        login_gate: Any = None,
                        restart: bool = True) -> dict:
-        return await self.stream.run_code(
+        output = self.stream.run_code(
             code, login_gate=login_gate, restart=restart
         )
+        if timeout and timeout > 0:
+            return await asyncio.wait_for(output, timeout=timeout)
+        return await output

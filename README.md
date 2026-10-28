@@ -649,12 +649,13 @@ uv run python main.py --validate-cron "0 8 * * *"  # 仅校验并预览下次运
 #### 会话式多轮对话
 
 - **会话持久化**：会话与消息按 `crawler_id` 隔离并持久化到 MongoDB，支持多轮续聊；后端重启后自动从 MongoDB 注入历史再继续。会话下拉菜单可**新建 / 切换 / 删除 / 重命名**，面板一次只执行一个会话——某会话运行 / 等待登录时，其余会话显示"被占用"、输入框旁提供**停止**按钮可随时终止当前轮次。
+- **单 Agent 运行锁**：同一后端实例全局只允许一个 Agent 运行；任意会话处于运行 / 等待确认时，新建会话或发送新消息会返回 `409`，前端同步禁用新建与发送。`ask_user` 不设超时；问题会写入会话文档，刷新页面、重新打开窗口或切换会话后仍可恢复问卷并继续原轮次；`page_login` 仍按登录载荷超时。
 - **自动标题**：新建会话默认标题"新会话"，发送第一条消息后由 LLM 根据消息内容自动生成简短标题；用户也可随时手动改名（点击标题栏铅笔按钮或会话下拉菜单中每条会话的铅笔图标），手动改名后自动标题不再覆盖。
 - 在面板输入框发送任务即可；也可用兼容接口 `POST /api/v1/agent/start` `{"task":"..."}` 快速发起。
 
 #### Agent 能力
 
-- **操控项目浏览器**：`browser_navigate` / `browser_evaluate` / `page_analyze` / `browser_run_code` 直接驱动项目内置的 Xvfb + Chrome 链路，**浏览器操作由 Agent 自主完成**；需要账号/密码/验证码等私有信息时通过 `page_login` 模拟登录框询问并由系统自动回填（`browser_run_code` 可传 `restart=false` 复用当前浏览器以保住登录态）。
+- **操控项目浏览器**：`browser_navigate` / `browser_evaluate` / `page_analyze` / `browser_network` / `browser_run_code` 直接驱动项目内置的 Xvfb + Chrome 链路，**浏览器操作由 Agent 自主完成**；需要账号/密码/验证码等私有信息时通过 `page_login` 模拟登录框询问并由系统自动回填（`browser_run_code` 可传 `restart=false` 复用当前浏览器以保住登录态）。
 - **判断爬取方式**：先 `http_request` 试探能否直抓（静态页、无鉴权走 HTTP），判断是否需要登录、是否 JS 动态渲染、反爬强度，再决定用浏览器渲染抓取；需要真正读写 REST / 开放接口时用 `api_request`（GET/POST/PUT/PATCH/DELETE，可带请求头 / 查询参数 / JSON / 表单 / Cookie）。
 - **视觉判断**：`browser_screenshot` 截取当前页面并作为图片返回给多模态主模型，直接在下一轮「看到」真实渲染结果——用于确认布局 / 遮挡 / 弹窗 / 登录框 / 验证样式，或 DOM 与文本无法判断的场景（能用 DOM / 文本确定时仍优先用 `page_analyze` / `browser_evaluate`）。
 - **人机验证处理**：怀疑被滑块 / 「我是真人」/ 图片点选拦截时，先 `detect_verification` 判型，命中后再 `solve_verification` 限次自动求解（不弹窗），失败转 `ask_user`；交付脚本时把验证画像通过 `verify_check(hints=...)` 写入产物。

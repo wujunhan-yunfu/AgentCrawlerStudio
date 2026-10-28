@@ -153,6 +153,8 @@ async def run(request: Request, req: RunRequest) -> StreamingResponse:
     登录请求/超时/成功通过本流实时推送, 前端无需轮询。
     """
     stream = _stream(request)
+    if getattr(stream, "busy", False):
+        raise HTTPException(status_code=409, detail="浏览器正在执行其他任务, 请等待当前运行结束")
     run_id = (req.run_id or "").strip() or uuid.uuid4().hex[:12]
     login_gate = _run_login(request).new_gate(run_id, BrowserBridge(stream))
     queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
@@ -340,6 +342,8 @@ async def organize_imports(request: Request, req: FormatRequest) -> dict:
 @router.post("/restart", response_model=StatusResult)
 async def restart(request: Request) -> dict:
     stream = _stream(request)
+    if getattr(stream, "busy", False):
+        raise HTTPException(status_code=409, detail="浏览器正在执行任务, 无法重启")
     await stream.restart()
     return await stream.status()
 

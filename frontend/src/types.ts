@@ -104,7 +104,7 @@ export interface AgentSavedItem {
   content?: string;
 }
 
-export type AgentStatus = "idle" | "running" | "waiting" | "done" | "error" | "cancelled";
+export type AgentStatus = "idle" | "running" | "waiting" | "done" | "error" | "cancelled" | "interrupted";
 
 export interface AgentSessionInfo {
   id: string;

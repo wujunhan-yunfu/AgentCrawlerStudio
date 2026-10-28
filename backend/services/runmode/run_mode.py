@@ -190,7 +190,15 @@ async def _cron_loop(
         except asyncio.CancelledError:
             return 0
         ctx.next_run_at = 0
-        exit_code = await _run_once(cfg, ctx, sender, collector, tickets, heartbeat)
+        try:
+            await _run_once(cfg, ctx, sender, collector, tickets, heartbeat)
+        except Exception as exc:  # noqa: BLE001 - 单次运行异常不应杀死 cron 常驻进程
+            print(f"[cron] 本次运行异常: {type(exc).__name__}: {exc}", file=sys.stderr)
+            ctx.set_status("failed", error_type="internal", error_message=str(exc)[:500])
+            try:
+                await _notify(sender, ctx)
+            except Exception:  # noqa: BLE001
+                pass
         ctx.last_run = {
             "run_id": ctx.run_id,
             "status": ctx.status,
@@ -213,7 +221,12 @@ async def _main_async(
     try:
         if (cfg.run_type or "once") == "cron":
             return await _cron_loop(cfg, ctx, sender, collector, tickets, heartbeat)
-        return await _run_once(cfg, ctx, sender, collector, tickets, heartbeat)
+        try:
+            return await _run_once(cfg, ctx, sender, collector, tickets, heartbeat)
+        except Exception as exc:  # noqa: BLE001
+            ctx.set_status("failed", error_type="internal", error_message=str(exc)[:500])
+            await _notify(sender, ctx)
+            return _EXIT_CODE["internal"]
     finally:
         if heartbeat is not None:
             await heartbeat.stop()
@@ -248,3 +261,8 @@ def run_mode_main(cfg: Config) -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"run 模式执行失败: {exc}", file=sys.stderr)
         return _EXIT_CODE["internal"]
+    finally:
+        try:
+            asyncio.run(tickets.close())
+        except Exception:  # noqa: BLE001
+            pass

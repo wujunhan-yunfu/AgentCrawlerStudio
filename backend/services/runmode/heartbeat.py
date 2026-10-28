@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 from typing import Any
 
 from .run_context import now_ms

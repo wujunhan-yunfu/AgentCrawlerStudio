@@ -38,8 +38,16 @@ _MAX_SESSIONS = 200
 _TRANSIENT_STATUS = {"思考中..."}
 
 
+class AgentBusyError(ValueError):
+    """已有 Agent 正在执行(产品层面同一时刻只允许一个 Agent 运行)。"""
+
+
 class AgentManager:
-    """管理所有爬虫 Agent 会话(多轮对话)。"""
+    """管理所有爬虫 Agent 会话(多轮对话)。
+
+    产品只支持**单 Agent 运行**: 所有会话共享一把全局运行锁。任意会话
+    执行/等待用户确认期间, 其它会话不能创建或启动新的 Agent 轮次。
+    """
 
     def __init__(self) -> None:
         self.hub = EventHub()
@@ -48,6 +56,8 @@ class AgentManager:
         self._stream: Any = None
         self.editor = EditorState()
         self.store: AgentStore | None = None
+        self._run_lock = asyncio.Lock()
+        self._active_session_id: str | None = None
 
     # ---------------------------------------------------------- 初始化
 
@@ -63,6 +73,49 @@ class AgentManager:
     def default_crawler_id(self) -> str:
         return self._resolve_crawler_id(None)
 
+    # ---------------------------------------------------------- 单 Agent 运行锁
+
+    def is_busy(self) -> bool:
+        """是否有 Agent 轮次正在运行/等待用户确认(全局唯一)。"""
+        if self._run_lock.locked():
+            return True
+        return any(s.status in ("running", "waiting") for s in self.sessions.values())
+
+    def active_session_id(self) -> str | None:
+        return self._active_session_id
+
+    async def recover_stale_sessions(self) -> int:
+        """启动时回收上次进程遗留的 running/waiting 会话, 避免永久卡死。
+
+        返回被修正的会话数量。MongoDB 不可用时静默跳过。
+        """
+        cid = self.default_crawler_id()
+        docs = await self._store_call("list_sessions", cid, default=[]) or []
+        fixed = 0
+        for doc in docs:
+            if doc.get("status") not in ("running", "waiting"):
+                continue
+            sid = doc.get("session_id") or doc.get("id")
+            if not sid:
+                continue
+            await self._store_call(
+                "update_session",
+                sid,
+                cid,
+                status="interrupted",
+                last_message="上次执行被中断, 可重新发送消息继续",
+                question=None,
+            )
+            live = self.sessions.get(sid)
+            if live is not None:
+                live.status = "interrupted"
+                live.question = None
+                live.login = None
+                live.answer_future = None
+                live.login_future = None
+            fixed += 1
+        return fixed
+
     async def _store_call(
         self, method: str, *args: Any, default: Any = None, **kwargs: Any
     ) -> Any:
@@ -77,9 +130,14 @@ class AgentManager:
     # ---------------------------------------------------------- 会话生命周期
 
     async def create_session(self, crawler_id: str | None, title: str) -> AgentSession:
-        """新建一个会话(不立即启动 Agent, 等用户发第一条消息)。"""
+        """新建一个会话(不立即启动 Agent, 等用户发第一条消息)。
+
+        已有 Agent 运行时拒绝创建新会话(产品只支持单 Agent 运行)。
+        """
         if not title or not title.strip():
             raise ValueError("会话标题不能为空")
+        if self.is_busy():
+            raise AgentBusyError("已有 Agent 正在运行, 请等待当前任务完成")
         cid = self._resolve_crawler_id(crawler_id)
         session_id = uuid.uuid4().hex[:12]
         session = AgentSession(
@@ -124,7 +182,10 @@ class AgentManager:
     async def send_message(
         self, crawler_id: str | None, session_id: str, content: str
     ) -> AgentSession:
-        """向会话发送一条用户消息, 驱动 Agent 执行一轮多轮对话。"""
+        """向会话发送一条用户消息, 驱动 Agent 执行一轮多轮对话。
+
+        全局只允许一个 Agent 运行: 获取运行锁失败时抛 AgentBusyError。
+        """
         cid = self._resolve_crawler_id(crawler_id)
         session = self.sessions.get(session_id)
         if session is None:
@@ -144,47 +205,72 @@ class AgentManager:
         if not content or not content.strip():
             raise ValueError("消息内容不能为空")
         content = content.strip()
-        # 新一轮开始: 把当前编辑器内容记为「源文件基线」, 供前端展示总变更
-        self.editor.mark_turn()
-        # 首条消息: 后台自动生成会话标题(不阻塞消息发送), 手动改名后不再覆盖
-        if not session.started and not session.title_manual:
-            is_first = (
-                await self._store_call(
-                    "count_messages", session.id, session.crawler_id, default=0
-                )
-                or 0
-            ) == 0
-            if is_first:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self._auto_title(session, content))
-        if session.agent is None:
-            # 优先等待后台预构建的 Agent; 未完成/构建失败则现场构建
-            build_task = getattr(session, "build_task", None)
-            if build_task is not None and not build_task.done():
-                try:
-                    await build_task
-                except Exception:  # noqa: BLE001
-                    pass
+        if self._run_lock.locked():
+            raise AgentBusyError("已有 Agent 正在运行, 请等待当前任务完成")
+        await self._run_lock.acquire()
+        self._active_session_id = session.id
+        try:
+            # 新一轮开始: 把当前编辑器内容记为「源文件基线」, 供前端展示总变更
+            self.editor.mark_turn()
+            # 首条消息: 后台自动生成会话标题(不阻塞消息发送), 手动改名后不再覆盖
+            if not session.started and not session.title_manual:
+                is_first = (
+                    await self._store_call(
+                        "count_messages", session.id, session.crawler_id, default=0
+                    )
+                    or 0
+                ) == 0
+                if is_first:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._auto_title(session, content))
             if session.agent is None:
-                try:
-                    self._ensure_agent(session)
-                except RuntimeError as exc:
-                    raise ValueError(str(exc)) from exc
-        self._start_persist_worker(session)
-        # 先广播用户消息回显, 让前端立即看到, 再落库
-        session.status = "running"
-        session.emit(
-            {"type": "user_message", "content": content, "title": session.title}
-        )
-        # 落库本条用户消息(需在 _run_turn 读取历史之前完成, 保证首轮上下文完整)
-        await self._store_call(
-            "add_message", session.id, session.crawler_id, "user", "text", content
-        )
-        loop = asyncio.get_running_loop()
-        # 消息计数与会话状态更新放到后台, 不阻塞响应
-        loop.create_task(self._persist_turn_start(session, content))
-        session.task_handle = loop.create_task(self._run_turn(session, content))
+                # 优先等待后台预构建的 Agent; 未完成/构建失败则现场构建
+                build_task = getattr(session, "build_task", None)
+                if build_task is not None and not build_task.done():
+                    try:
+                        await build_task
+                    except Exception:  # noqa: BLE001
+                        pass
+                if session.agent is None:
+                    try:
+                        self._ensure_agent(session)
+                    except RuntimeError as exc:
+                        raise ValueError(str(exc)) from exc
+            self._start_persist_worker(session)
+            # 先广播用户消息回显, 让前端立即看到, 再落库
+            session.status = "running"
+            session.emit(
+                {"type": "user_message", "content": content, "title": session.title}
+            )
+            # 落库本条用户消息(需在 _run_turn 读取历史之前完成, 保证首轮上下文完整)
+            await self._store_call(
+                "add_message", session.id, session.crawler_id, "user", "text", content
+            )
+            # 同步落库本轮开始状态: 既保证重启后可识别 running, 也避免后台任务
+            # 在本轮结束后把状态覆盖回 running。
+            await self._persist_turn_start(session, content)
+            loop = asyncio.get_running_loop()
+            token = object()
+            session._run_token = token
+            session.task_handle = loop.create_task(self._run_turn(session, content))
+            # 即使任务在首次执行前就被 cancel, 也要释放全局锁。
+            session.task_handle.add_done_callback(
+                lambda _task: self._release_run(session, token)
+            )
+        except BaseException:
+            self._release_run(session)
+            raise
         return session
+
+    def _release_run(self, session: AgentSession, token: Any = None) -> None:
+        """释放全局运行锁(幂等); 仅释放当前持有者。"""
+        if self._active_session_id != session.id:
+            return
+        if token is not None and getattr(session, "_run_token", None) is not token:
+            return
+        self._active_session_id = None
+        if self._run_lock.locked():
+            self._run_lock.release()
 
     async def delete_session(self, crawler_id: str | None, session_id: str) -> None:
         """删除会话、其全部消息与对应的检查点状态。"""
@@ -198,6 +284,7 @@ class AgentManager:
             if session.task_handle is not None:
                 session.task_handle.cancel()
         self._stop_persist_worker(session)
+        self.hub.drop_session(session_id)
         await self._store_call("delete_session", session_id, cid)
         try:
             await get_checkpointer(self.cfg).adelete_thread(session_id)
@@ -359,9 +446,10 @@ class AgentManager:
             :-_MAX_SESSIONS
         ]:
             old = self.sessions[sid]
-            if old.status in ("done", "error", "cancelled", "idle"):
+            if old.status in ("done", "error", "cancelled", "idle", "interrupted"):
                 self.sessions.pop(sid, None)
                 self._stop_persist_worker(old)
+                self.hub.drop_session(sid)
 
     # ---------------------------------------------------------- 事件持久化
 
@@ -484,6 +572,7 @@ class AgentManager:
             session.login_future.cancel()
         if session.task_handle is not None:
             session.task_handle.cancel()
+        session.status = "cancelled"
         await self._store_call(
             "update_session", session.id, session.crawler_id, status="cancelled"
         )
@@ -625,6 +714,7 @@ class AgentManager:
             session.emit({"type": "session_end", "reason": "error"})
         finally:
             session.task_handle = None
+            self._release_run(session)
 
     async def _consume(self, session: AgentSession, stream) -> None:
         """消费一条(可能被多次 resume 续接的)事件流。"""
@@ -754,6 +844,9 @@ class AgentManager:
             meta = {"saved": saved}
         elif etype == "question":
             meta = {"qid": event.get("qid"), "questions": event.get("questions")}
+        elif etype == "login_timeout":
+            content = event.get("message") or "登录等待超时"
+            meta = {"qid": event.get("qid")}
         elif etype == "answer":
             content = "用户已回答"
             meta = {
@@ -816,14 +909,31 @@ class AgentManager:
             "qid": payload.get("qid"),
             "questions": payload.get("questions"),
         }
+        # 把等待中的问题同步到会话文档: 前端刷新/切换会话后可以据此重建问卷。
+        await self._store_call(
+            "update_session",
+            session.id,
+            session.crawler_id,
+            status="waiting",
+            question=session.question,
+        )
         # 落库由 emit 的持久化队列统一完成
         session.emit(dict(question_event))
         try:
+            # 不限制用户思考时间; 页面刷新/重连后仍通过 qid 恢复同一个 future。
             answers = await session.answer_future
         finally:
             session.answer_future = None
-        session.question = None
-        session.status = "running"
+            session.question = None
+            if session.status == "waiting":
+                session.status = "running"
+            await self._store_call(
+                "update_session",
+                session.id,
+                session.crawler_id,
+                status=session.status,
+                question=None,
+            )
         return answers
 
     async def _finalize_done(self, session: AgentSession) -> None:

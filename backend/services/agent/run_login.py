@@ -75,7 +75,19 @@ class StandaloneLoginGate:
             else:
                 monitor = loop.create_task(self._monitor_qr(payload))
         try:
+            timeout = float(payload.get("timeout") or 180)
+            if timeout > 0:
+                return await asyncio.wait_for(self._future, timeout=timeout)
             return await self._future
+        except asyncio.TimeoutError:
+            self._emit(
+                {
+                    "type": "run_login_timeout",
+                    "run_id": self.run_id,
+                    "message": f"登录等待超时({timeout:.0f}s)",
+                }
+            )
+            return {"ok": False, "timeout": True, "error": "登录等待超时"}
         finally:
             if monitor is not None and not monitor.done():
                 monitor.cancel()
@@ -198,6 +210,9 @@ class StandaloneLoginGate:
                 return
             if loop.time() > deadline:
                 self._emit({"type": "run_login_timeout", "run_id": self.run_id})
+                self._resolve_future(
+                    {"ok": False, "timeout": True, "error": "等待扫码超时"}
+                )
                 return
             r = await self.bridge.evaluate("location.href")
             cur = ""

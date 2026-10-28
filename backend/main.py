@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 
-from .config import STATIC_DIR, Config, build_config
+from .config import PROJECT_ROOT, STATIC_DIR, Config, build_config
 from .routers import (
     agent,
     console,
@@ -34,6 +34,7 @@ from .services.agent.run_login import RunLoginManager
 from .services.agent.runner import AgentManager
 from .services.browser import BrowserStream
 from .services.runmode.login_mode import LoginRunManager
+from .services.tmp_cleanup import sweep_temp_dirs
 
 
 def create_app(cfg: Config | None = None) -> FastAPI:
@@ -58,6 +59,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         service.loop = asyncio.get_running_loop()
         try:
+            await asyncio.to_thread(sweep_temp_dirs, PROJECT_ROOT)
             await service.start()
             if service.error:
                 raise RuntimeError(f"启动失败: {service.error}")
@@ -68,6 +70,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         if mode == "dev":
             agent_mgr.setup(cfg, service)
             await setup_checkpointer(cfg)
+            await agent_mgr.recover_stale_sessions()
             app.state.agent = agent_mgr
             app.state.run_login = run_login
         elif mode == "login":

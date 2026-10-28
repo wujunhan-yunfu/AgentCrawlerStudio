@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 from collections import deque
 from typing import Any
 
@@ -24,6 +25,7 @@ PERSISTED_EVENT_TYPES = {
     "saved",
     "question",
     "answer",
+    "login_timeout",
     "tool",
     "tool_result",
     "editor_code",
@@ -35,14 +37,43 @@ PERSISTED_EVENT_TYPES = {
 
 
 class EventHub:
-    """事件扇出总线: 追加历史 + 推送给所有订阅者。"""
+    """事件扇出总线: 追加历史 + 推送给所有订阅者。
+
+    - 全局 _buffer 保留原有行为(兼容测试/无会话事件);
+    - 每个会话另有独立缓冲与单调 seq, WS 可用 ?session=&since= 增量回放,
+      避免重连时重复消费全局历史;
+    - epoch 标识本次后端进程, 前端据此在后端重启后重置去重游标。
+    """
 
     def __init__(self, maxlen: int = _EVENT_BUFFER):
         self._buffer: deque[dict[str, Any]] = deque(maxlen=maxlen)
         self._subs: list[asyncio.Queue] = []
+        self._maxlen = maxlen
+        self._session_buffers: dict[str, deque[dict[str, Any]]] = {}
+        self._seq: dict[str, int] = {}
+        self.epoch = uuid.uuid4().hex[:12]
+
+    def latest_seq(self, session_id: str) -> int:
+        return self._seq.get(session_id, 0)
+
+    def drop_session(self, session_id: str) -> None:
+        """会话删除/淘汰时释放其事件缓冲与序号。"""
+        self._session_buffers.pop(session_id, None)
+        self._seq.pop(session_id, None)
 
     def emit(self, event: dict[str, Any]) -> None:
         etype = event.get("type")
+        sid = event.get("session_id")
+        if sid:
+            seq = self._seq.get(sid, 0) + 1
+            self._seq[sid] = seq
+            event["seq"] = seq
+            if etype not in _EPHEMERAL_TYPES:
+                buf = self._session_buffers.get(sid)
+                if buf is None:
+                    buf = deque(maxlen=self._maxlen)
+                    self._session_buffers[sid] = buf
+                buf.append(event)
         if etype not in _EPHEMERAL_TYPES:
             self._buffer.append(event)
         dead: list[asyncio.Queue] = []
@@ -56,10 +87,19 @@ class EventHub:
         for q in dead:
             self._subs.remove(q)
 
-    def subscribe(self) -> asyncio.Queue:
+    def subscribe(
+        self, session_id: str | None = None, since: int | None = None
+    ) -> asyncio.Queue:
+        """订阅事件; 指定 session_id 时只回放该会话 seq > since 的事件。"""
         q: asyncio.Queue = asyncio.Queue(maxsize=1024)
         self._subs.append(q)
-        for event in self._buffer:
+        if session_id:
+            source = list(self._session_buffers.get(session_id, ()))
+            floor = int(since or 0)
+            source = [e for e in source if int(e.get("seq") or 0) > floor]
+        else:
+            source = list(self._buffer)
+        for event in source:
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:

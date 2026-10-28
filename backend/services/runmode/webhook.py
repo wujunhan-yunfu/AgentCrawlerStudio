@@ -27,6 +27,10 @@ _DEFAULT_TIMEOUT = 15.0
 class WebhookError(Exception):
     """webhook 投递失败(重试耗尽或不可恢复错误)。"""
 
+    def __init__(self, message: str, *, retryable: bool = True) -> None:
+        super().__init__(message)
+        self.retryable = retryable
+
 
 def sign(secret: str, timestamp: str, body: str) -> str:
     """HMAC-SHA256 签名: sha256=hexdigest(secret, timestamp + '.' + body)。"""
@@ -97,7 +101,8 @@ class WebhookSender:
             data = {"raw": text}
         if resp.status_code >= 400:
             raise WebhookError(
-                f"webhook {event} -> {self.url} 失败: HTTP {resp.status_code}: {text[:200]}"
+                f"webhook {event} -> {self.url} 失败: HTTP {resp.status_code}: {text[:200]}",
+                retryable=resp.status_code == 429 or resp.status_code >= 500,
             )
         return data
 
@@ -113,6 +118,8 @@ class WebhookSender:
                 return await self.send(event, payload)
             except Exception as exc:  # noqa: BLE001
                 last = exc
+                if getattr(exc, "retryable", True) is False:
+                    break
         raise WebhookError(
             f"webhook {event} 重试 {self.max_attempts} 次后仍失败: {last}"
         ) from last
