@@ -2659,6 +2659,58 @@ button.primary {
   padding: 0 2px;
 }
 
+/* 上下文压缩卡片 */
+.oc-compression {
+  border: 1px solid var(--oc-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--oc-muted);
+  background: color-mix(in srgb, var(--oc-agent) 4%, transparent);
+}
+
+.oc-compression.error {
+  border-color: var(--oc-error);
+  color: var(--oc-error);
+}
+
+.oc-compression-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.oc-compression-ico {
+  color: var(--oc-agent);
+  font-weight: 600;
+}
+
+.oc-compression-title {
+  color: var(--oc-text);
+  font-weight: 600;
+}
+
+.oc-compression-saved {
+  margin-left: auto;
+  color: var(--oc-muted);
+}
+
+.oc-compression-body,
+.oc-compression-detail {
+  margin-top: 4px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.oc-compression-path {
+  margin-top: 2px;
+  font-family: var(--oc-mono, monospace);
+  opacity: 0.8;
+  word-break: break-all;
+}
+
 /* 工具调用: 行内工具(InlineTool) 与 块工具(BlockTool) */
 .oc-tool {
   display: flex;

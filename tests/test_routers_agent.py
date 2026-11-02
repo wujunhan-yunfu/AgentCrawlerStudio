@@ -131,6 +131,21 @@ async def test_agent_session_rename_empty(client):
     assert resp.status_code == 400
 
 
+async def test_agent_session_compress(client):
+    resp = await client.post("/api/v1/agent/session", json={"title": "T"})
+    sid = resp.json()["session_id"]
+    resp = await client.post(f"/api/v1/agent/session/{sid}/compress", json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["deferred"] is True
+
+
+async def test_agent_session_compress_not_found(client):
+    resp = await client.post("/api/v1/agent/session/nope/compress", json={})
+    assert resp.status_code == 404
+
+
 async def test_agent_start(client):
     resp = await client.post("/api/v1/agent/start", json={"task": "采集"})
     assert resp.status_code == 200

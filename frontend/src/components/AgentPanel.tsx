@@ -229,12 +229,72 @@ function SavedItem({ item }: { item: AgentFeedItem }) {
   );
 }
 
+function CompressionCard({ item }: { item: AgentFeedItem }) {
+  const [open, setOpen] = useState(false);
+  const c = item.compression ?? {};
+  if (c.error) {
+    return (
+      <div className="oc-compression error">
+        <div className="oc-compression-head">{t("agent.compressErrorTitle")}</div>
+        <div className="oc-compression-detail">{c.error}</div>
+      </div>
+    );
+  }
+  const saved = c.saved_tokens ?? 0;
+  return (
+    <div className="oc-compression">
+      <div
+        className="oc-compression-head"
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+      >
+        <span className="oc-compression-ico">⇣</span>
+        <span className="oc-compression-title">{t("agent.compressCardTitle")}</span>
+        <span className="oc-compression-saved">
+          {t("agent.compressSaved", { tokens: saved.toLocaleString() })}
+        </span>
+        <span className="oc-caret">{open ? "▾" : "▸"}</span>
+      </div>
+      {open ? (
+        <div className="oc-compression-body">
+          <div>
+            {t("agent.compressDetail", {
+              before: (c.before_tokens ?? 0).toLocaleString(),
+              after: (c.after_tokens ?? 0).toLocaleString(),
+            })}
+          </div>
+          <div>
+            {t("agent.compressMeta", {
+              summarized: c.summarized_messages ?? 0,
+              keep: c.keep_messages ?? 0,
+              version: c.version ?? 0,
+            })}
+          </div>
+          {c.history_path ? (
+            <div className="oc-compression-path">{c.history_path}</div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function FeedItem({ item }: { item: AgentFeedItem }) {
   if (item.kind === "user") {
     return <div className="oc-user">{item.content}</div>;
   }
   if (item.kind === "status") {
     return <div className="oc-status">{item.content}</div>;
+  }
+  if (item.kind === "compression") {
+    return <CompressionCard item={item} />;
   }
   if (item.kind === "message") {
     return <div className="oc-message">{item.content}</div>;
@@ -1314,6 +1374,16 @@ export default function AgentPanel({
         />
         {hasSession ? (
           <>
+            <button
+              className="agent-session-new"
+              title={t("agent.compressTitle")}
+              onClick={() => void agent.compressContext()}
+            >
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 3.5h8M4 6.5h8M6 9.5h4" />
+                <path d="M8 12v2M6.5 12.8 8 14l1.5-1.2" />
+              </svg>
+            </button>
             <button
               className="agent-session-new"
               title={t("agent.editTitle")}

@@ -587,6 +587,12 @@ class FakeAgentManager:
             raise KeyError("会话不存在")
         self.sessions[session_id].status = "cancelled"
 
+    async def compress_session(self, crawler_id, session_id):
+        s = self.sessions.get(session_id)
+        if s is None:
+            raise KeyError("会话不存在")
+        return {"ok": True, "session_id": session_id, "deferred": True, "status": s.status}
+
     async def login_action(self, crawler_id, session_id, action):
         if session_id not in self.sessions:
             raise KeyError("会话不存在")

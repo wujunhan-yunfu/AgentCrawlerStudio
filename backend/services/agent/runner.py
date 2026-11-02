@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any
 
@@ -73,6 +74,22 @@ class AgentManager:
     def default_crawler_id(self) -> str:
         return self._resolve_crawler_id(None)
 
+    def _session_from_doc(self, doc: dict[str, Any]) -> AgentSession:
+        """从 Mongo 会话文档恢复内存会话(含压缩计数与防抖状态)。"""
+        return AgentSession(
+            id=doc["session_id"],
+            crawler_id=doc["crawler_id"],
+            title=doc["title"],
+            hub=self.hub,
+            status=doc.get("status", "idle"),
+            compression_count=int(doc.get("compression_count") or 0),
+            last_compression=doc.get("last_compression"),
+            last_compression_message_count=int(
+                doc.get("last_compression_message_count") or 0
+            ),
+            last_compression_tokens=int(doc.get("last_compression_tokens") or 0),
+        )
+
     # ---------------------------------------------------------- 单 Agent 运行锁
 
     def is_busy(self) -> bool:
@@ -113,6 +130,7 @@ class AgentManager:
                 live.login = None
                 live.answer_future = None
                 live.login_future = None
+                live.compress_requested = False
             fixed += 1
         return fixed
 
@@ -192,13 +210,7 @@ class AgentManager:
             doc = await self._store_call("get_session", session_id, cid)
             if doc is None:
                 raise KeyError("会话不存在")
-            session = AgentSession(
-                id=doc["session_id"],
-                crawler_id=doc["crawler_id"],
-                title=doc["title"],
-                hub=self.hub,
-                status=doc.get("status", "idle"),
-            )
+            session = self._session_from_doc(doc)
             self.sessions[session_id] = session
         if session.status in ("running", "waiting"):
             raise ValueError("会话正在处理中, 请等待当前任务完成后再发送")
@@ -306,13 +318,7 @@ class AgentManager:
             doc = await self._store_call("get_session", session_id, cid)
             if doc is None:
                 raise KeyError("会话不存在")
-            session = AgentSession(
-                id=doc["session_id"],
-                crawler_id=doc["crawler_id"],
-                title=doc["title"],
-                hub=self.hub,
-                status=doc.get("status", "idle"),
-            )
+            session = self._session_from_doc(doc)
             self.sessions[session_id] = session
         session.title = title.strip()
         session.title_manual = True
@@ -577,6 +583,58 @@ class AgentManager:
             "update_session", session.id, session.crawler_id, status="cancelled"
         )
 
+    async def compress_session(
+        self, crawler_id: str | None, session_id: str
+    ) -> dict[str, Any]:
+        """请求压缩会话上下文。
+
+        运行中/等待中的会话只置一次性标记, 在下一次模型调用前执行; 空闲会话
+        也置标记, 在下一次发送消息时生效(避免无模型请求时手工改写图状态)。
+        """
+        cid = self._resolve_crawler_id(crawler_id)
+        session = self.sessions.get(session_id)
+        if session is None:
+            doc = await self._store_call("get_session", session_id, cid)
+            if doc is None:
+                raise KeyError("会话不存在")
+            session = self._session_from_doc(doc)
+            self.sessions[session_id] = session
+
+        if self.cfg is None or not getattr(self.cfg, "context_compress", True):
+            raise ValueError("上下文压缩已关闭")
+        if (
+            str(getattr(self.cfg, "compress_mode", "auto")).strip().lower()
+            == "off"
+        ):
+            raise ValueError("上下文压缩已关闭")
+
+        if session.agent is not None:
+            try:
+                state = await session.agent.aget_state(session.config)
+                messages = (state.values or {}).get("messages") or []
+            except Exception:  # noqa: BLE001
+                messages = []
+            keep = int(getattr(self.cfg, "compress_keep_messages", 12))
+            if messages and len(messages) <= keep + 2:
+                raise ValueError("可压缩历史不足")
+
+        session.compress_requested = True
+        # 压缩只在模型调用前执行: 无论当前是否运行, 都延迟到下一次模型调用
+        deferred = True
+        session.emit(
+            {
+                "type": "context_compression_requested",
+                "reason": "manual",
+                "deferred": deferred,
+            }
+        )
+        return {
+            "ok": True,
+            "session_id": session.id,
+            "deferred": deferred,
+            "status": session.status,
+        }
+
     async def finalize_session(
         self,
         crawler_id: str | None,
@@ -634,8 +692,37 @@ class AgentManager:
         build_chat_model(self.cfg)  # 提前校验 LLM 配置
         bridge = BrowserBridge(self._stream)
         session.persist = self._persist_event
-        session.agent = build_agent(self.cfg, session, bridge, editor=self.editor)
+        session.compression_audit = self._compression_audit(session)
+        session.agent = build_agent(
+            self.cfg, session, bridge, editor=self.editor
+        )
         session.config = {"configurable": {"thread_id": session.id}}
+
+    def _compression_audit(self, session: AgentSession):
+        """压缩审计回调: 落 agent_compactions 并更新会话摘要信息。"""
+
+        async def _record(payload: dict[str, Any], summary: str) -> None:
+            fields = {k: v for k, v in payload.items() if k != "type"}
+            await self._store_call(
+                "add_compaction",
+                session.id,
+                session.crawler_id,
+                summary=summary,
+                **fields,
+            )
+            await self._store_call(
+                "update_session",
+                session.id,
+                session.crawler_id,
+                compression_count=payload.get("version", 0),
+                last_compression_at=time.time(),
+                context_tokens_estimate=payload.get("after_tokens", 0),
+                last_compression=payload,
+                last_compression_message_count=session.last_compression_message_count,
+                last_compression_tokens=session.last_compression_tokens,
+            )
+
+        return _record
 
     async def _load_history(self, session: AgentSession) -> list:
         """从 MongoDB 读取会话历史, 用于后端重启后重建上下文。"""
@@ -828,8 +915,58 @@ class AgentManager:
                 )
                 session.last_assistant_text = text
             return
+        # observe 模式的压缩事件只用于实时展示, 不写入历史
+        if etype == "context_compression" and event.get("applied") is False:
+            return
         content = ""
         meta: dict[str, Any] = {}
+        if etype == "context_compression":
+            saved = int(event.get("saved_tokens") or 0)
+            content = f"上下文已压缩, 释放约 {saved} tokens"
+            meta = {
+                k: event.get(k)
+                for k in (
+                    "reason",
+                    "before_tokens",
+                    "after_tokens",
+                    "saved_tokens",
+                    "message_count_before",
+                    "message_count_after",
+                    "summarized_messages",
+                    "keep_messages",
+                    "summary_chars",
+                    "history_path",
+                    "duration_ms",
+                    "version",
+                    "model",
+                    "applied",
+                )
+            }
+            await self._store_call(
+                "add_message",
+                session.id,
+                session.crawler_id,
+                "event",
+                etype,
+                content,
+                meta,
+            )
+            return
+        if etype == "context_compression_error":
+            content = event.get("error") or event.get("content") or "上下文压缩失败"
+            meta = {"reason": event.get("reason")}
+            await self._store_call(
+                "add_message",
+                session.id,
+                session.crawler_id,
+                "event",
+                etype,
+                content,
+                meta,
+            )
+            return
+        if etype == "context_compression_requested":
+            return
         if etype in ("status", "error"):
             content = event.get("content", "") or ""
             if etype == "status" and content in _TRANSIENT_STATUS:

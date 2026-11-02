@@ -46,6 +46,18 @@ class AgentSession:
     started: bool = False
     # 标题是否由用户手动修改: 手动修改后不再被自动生成的标题覆盖
     title_manual: bool = False
+    # ---- 上下文压缩 ----
+    # 手动压缩请求: 运行中设置, 在下一次模型调用前消费
+    compress_requested: bool = False
+    # 会话内压缩次数(以 agent_sessions.compression_count 为准)
+    compression_count: int = 0
+    # 最近一次压缩的事件载荷, 供会话列表/详情展示
+    last_compression: dict[str, Any] | None = None
+    # 压缩后的有效消息数与估算 token, 用于防抖
+    last_compression_message_count: int = 0
+    last_compression_tokens: int = 0
+    # 压缩审计回调(由 runner 注入): audit(payload, summary) -> None
+    compression_audit: Any = None
 
     def emit(self, event: dict[str, Any]) -> None:
         event.setdefault("session_id", self.id)

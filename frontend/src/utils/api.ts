@@ -386,6 +386,14 @@ export function agentStop(sessionId: string, crawlerId?: string): Promise<{ ok: 
   return post("/agent/stop", { session_id: sessionId, crawler_id: crawlerId });
 }
 
+/** 手动压缩会话上下文(运行中延迟到下一次模型调用前生效)。 */
+export function agentCompress(
+  sessionId: string,
+  crawlerId?: string,
+): Promise<{ ok: boolean; session_id: string; deferred: boolean; status: string }> {
+  return post(`/agent/session/${sessionId}/compress`, { crawler_id: crawlerId });
+}
+
 /** 前端第二层保障: 会话完成/停止后显式校正会话记录(message_count/last_message/status)。 */
 export function agentFinalize(
   sessionId: string,

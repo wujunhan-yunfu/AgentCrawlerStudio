@@ -1146,3 +1146,78 @@ async def test_finalize_done_empty_state(manager):
     await manager._finalize_done(s)
     assert s.status == "done"
     assert manager.store.sessions[s.id]["last_message"] == "T"  # 无结果回退标题
+
+# --------------------------------------------------------------------------- 上下文压缩
+
+
+async def test_compress_session_requests_when_idle(manager):
+    s = make_session(manager)
+    s.started = True
+    s.status = "done"
+    out = await manager.compress_session(None, "s1")
+    assert out["ok"] is True
+    assert out["deferred"] is True
+    assert s.compress_requested is True
+    assert s.hub._buffer[-1]["type"] == "context_compression_requested"
+
+
+async def test_compress_session_not_found(manager):
+    with pytest.raises(KeyError):
+        await manager.compress_session(None, "nope")
+
+
+async def test_compress_session_disabled(manager):
+    manager.cfg.context_compress = False
+    make_session(manager)
+    with pytest.raises(ValueError):
+        await manager.compress_session(None, "s1")
+
+
+async def test_compress_session_insufficient_history(manager):
+    s = make_session(manager)
+    s.started = True
+    s.agent = FakeAgent(state_messages=[HumanMessage(content="x")] * 3)
+    with pytest.raises(ValueError):
+        await manager.compress_session(None, "s1")
+
+
+async def test_compress_session_running_is_deferred(manager):
+    s = make_session(manager)
+    s.started = True
+    s.status = "running"
+    out = await manager.compress_session(None, "s1")
+    assert out["deferred"] is True
+
+
+async def test_persist_compression_event(manager):
+    s = make_session(manager)
+    await manager._persist_event(
+        s,
+        {
+            "type": "context_compression",
+            "applied": True,
+            "reason": "auto",
+            "before_tokens": 1000,
+            "after_tokens": 200,
+            "saved_tokens": 800,
+            "version": 1,
+        },
+    )
+    msgs = manager.store.messages["s1"]
+    assert msgs[-1]["type"] == "context_compression"
+    assert msgs[-1]["meta"]["saved_tokens"] == 800
+
+    # observe 事件不落库
+    await manager._persist_event(
+        s, {"type": "context_compression", "applied": False}
+    )
+    assert len(manager.store.messages["s1"]) == 1
+
+
+async def test_persist_compression_error_event(manager):
+    s = make_session(manager)
+    await manager._persist_event(
+        s,
+        {"type": "context_compression_error", "reason": "auto", "error": "boom"},
+    )
+    assert manager.store.messages["s1"][-1]["type"] == "context_compression_error"

@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from deepagents import create_deep_agent
@@ -17,6 +18,7 @@ from langchain.agents.middleware import ModelCallLimitMiddleware, TodoListMiddle
 
 from .bridge import BrowserBridge
 from .checkpointer import get_checkpointer
+from .core.compression import build_compression_middleware
 from .core.fs import AGENT_BACKEND
 from .core.llm import build_chat_model
 from .middleware import AgentEventMiddleware
@@ -24,30 +26,53 @@ from .prompts import SYSTEM_PROMPT
 from .session.model import AgentSession
 from .tools import build_tools
 
+logger = logging.getLogger(__name__)
+
 
 def build_agent(
-    cfg: Any, session: AgentSession, bridge: BrowserBridge, editor: Any = None
+    cfg: Any,
+    session: AgentSession,
+    bridge: BrowserBridge,
+    editor: Any = None,
+    compression_audit: Any = None,
 ) -> Any:
     """构建统一 Agent(每个会话独立构建, 便于绑定会话事件与独立 checkpointer)。
 
     编辑器读写工具始终可用: Agent 自行判断意图, 最终都会写回/优化编辑器脚本。
+    上下文压缩中间件与 deepagents 内置实现同名, 会原位替换其默认压缩器。
     """
     model = build_chat_model(cfg)
     tools = build_tools(session, bridge, editor=editor)
     checkpointer = get_checkpointer(cfg)
-    return create_deep_agent(
-        model=model,
-        tools=tools,
-        system_prompt=SYSTEM_PROMPT,
-        middleware=[
-            AgentEventMiddleware(session),
+    audit = compression_audit or getattr(session, "compression_audit", None)
+    middleware: list[Any] = [AgentEventMiddleware(session)]
+    try:
+        middleware.append(
+            build_compression_middleware(
+                cfg,
+                session,
+                model,
+                backend=AGENT_BACKEND,
+                audit=audit,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001  压缩是优化项, 构建失败不阻断 Agent
+        logger.warning("[ContextCompression] 中间件构建失败, 本次不启用压缩: %s", exc)
+    middleware.extend(
+        [
             TodoListMiddleware(system_prompt=""),
             ModelCallLimitMiddleware(
                 # 只限制单轮, 不限制整个会话: thread_limit 会跨轮次累计,
                 # 长会话达到上限后会静默结束(由产品层面单 Agent 锁控制并发)。
                 thread_limit=None, run_limit=160, exit_behavior="end"
             ),
-        ],
+        ]
+    )
+    return create_deep_agent(
+        model=model,
+        tools=tools,
+        system_prompt=SYSTEM_PROMPT,
+        middleware=middleware,
         backend=AGENT_BACKEND,
         permissions=[
             # 历史遗留 profile 仍可能在 tmp/ 下; 禁止 Agent 通过文件工具读取。

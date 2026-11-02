@@ -79,6 +79,10 @@ class EditorCodeRequest(BaseModel):
     code: str
 
 
+class CompressRequest(BaseModel):
+    crawler_id: str | None = None
+
+
 @router.get("/agent/info")
 async def agent_info(request: Request) -> dict:
     """返回当前后端配置的 crawler_id(会话隔离标识)与单 Agent 运行状态。"""
@@ -164,6 +168,20 @@ async def agent_session_rename(request: Request, session_id: str,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "session_id": session.id, "title": session.title}
+
+
+@router.post("/agent/session/{session_id}/compress")
+async def agent_session_compress(
+    request: Request, session_id: str, req: CompressRequest
+) -> dict:
+    """手动压缩会话上下文(运行中延迟到下一次模型调用前生效)。"""
+    manager = _manager(request)
+    try:
+        return await manager.compress_session(req.crawler_id, session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/agent/start")

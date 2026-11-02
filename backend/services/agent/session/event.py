@@ -33,6 +33,8 @@ PERSISTED_EVENT_TYPES = {
     "login_success",
     "login_action",
     "message_end",
+    "context_compression",
+    "context_compression_error",
 }
 
 

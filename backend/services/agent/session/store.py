@@ -16,6 +16,7 @@ from pymongo import ASCENDING, DESCENDING
 
 SESSION_COLLECTION = "agent_sessions"
 MESSAGE_COLLECTION = "agent_messages"
+COMPACTION_COLLECTION = "agent_compactions"
 
 # 单次连接/操作的最大等待时间: MongoDB 不可达时快速失败, 而不是默认 30s 的
 # serverSelectionTimeout。连接失败后进入冷却期, 冷却期内直接失败不再尝试,
@@ -39,6 +40,7 @@ class AgentStore:
         self._client: AsyncIOMotorClient | None = None
         self._sessions: Any = None
         self._messages: Any = None
+        self._compactions: Any = None
         self._down_until: float = 0.0
 
     async def _connect(self) -> None:
@@ -56,6 +58,7 @@ class AgentStore:
             db = self._client[self._mongo_db_name]
             self._sessions = db[SESSION_COLLECTION]
             self._messages = db[MESSAGE_COLLECTION]
+            self._compactions = db[COMPACTION_COLLECTION]
             await self._sessions.create_index([("session_id", ASCENDING)], unique=True)
             await self._sessions.create_index(
                 [("crawler_id", ASCENDING), ("updated_at", DESCENDING)]
@@ -66,6 +69,12 @@ class AgentStore:
             await self._messages.create_index(
                 [("crawler_id", ASCENDING), ("session_id", ASCENDING)]
             )
+            await self._compactions.create_index(
+                [("session_id", ASCENDING), ("ts", DESCENDING)]
+            )
+            await self._compactions.create_index(
+                [("crawler_id", ASCENDING), ("ts", DESCENDING)]
+            )
             self._down_until = 0.0
         except Exception:
             if self._client is not None:
@@ -73,6 +82,7 @@ class AgentStore:
                 self._client = None
             self._sessions = None
             self._messages = None
+            self._compactions = None
             self._down_until = time.monotonic() + _RETRY_COOLDOWN_S
             raise
 
@@ -124,6 +134,9 @@ class AgentStore:
         await self._connect()
         await self._sessions.delete_one({"session_id": session_id, "crawler_id": crawler_id})
         await self._messages.delete_many({"session_id": session_id, "crawler_id": crawler_id})
+        await self._compactions.delete_many(
+            {"session_id": session_id, "crawler_id": crawler_id}
+        )
 
     # ------------------------------------------------------------ 消息
 
@@ -166,6 +179,40 @@ class AgentStore:
         return await self._messages.count_documents(
             {"session_id": session_id, "crawler_id": crawler_id}
         )
+
+    # ------------------------------------------------------------ 上下文压缩审计
+
+    async def add_compaction(
+        self,
+        session_id: str,
+        crawler_id: str,
+        summary: str = "",
+        **fields: Any,
+    ) -> dict[str, Any]:
+        """记录一次上下文压缩(摘要、前后 token、保留窗口等)。"""
+        await self._connect()
+        doc = {
+            "session_id": session_id,
+            "crawler_id": crawler_id,
+            "summary": summary,
+            "ts": time.time(),
+            **fields,
+        }
+        res = await self._compactions.insert_one(doc)
+        return {"id": str(res.inserted_id), **doc}
+
+    async def list_compactions(
+        self, session_id: str, crawler_id: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        await self._connect()
+        cursor = (
+            self._compactions.find(
+                {"session_id": session_id, "crawler_id": crawler_id}
+            )
+            .sort("ts", DESCENDING)
+            .limit(limit)
+        )
+        return [self._strip(doc) async for doc in cursor]
 
     # ------------------------------------------------------------ 工具
 

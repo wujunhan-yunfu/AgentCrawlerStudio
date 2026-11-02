@@ -150,8 +150,26 @@ export interface AgentToolResultEvent {
   error: string;
 }
 
+export interface AgentCompressionInfo {
+  applied?: boolean;
+  reason?: string;
+  error?: string;
+  before_tokens?: number;
+  after_tokens?: number;
+  saved_tokens?: number;
+  message_count_before?: number;
+  message_count_after?: number;
+  summarized_messages?: number;
+  keep_messages?: number;
+  summary_chars?: number;
+  history_path?: string | null;
+  duration_ms?: number;
+  version?: number;
+  model?: string;
+}
+
 export interface AgentFeedItem {
-  kind: "user" | "message" | "tool" | "tool_result" | "status" | "error" | "saved" | "answer" | "diff" | "plan";
+  kind: "user" | "message" | "tool" | "tool_result" | "status" | "error" | "saved" | "answer" | "diff" | "plan" | "compression";
   content?: string;
   name?: string;
   args?: string;
@@ -165,4 +183,6 @@ export interface AgentFeedItem {
   diff?: { from?: string; to?: string };
   /** 该轮对话产生的爬取规划(任务完成后展示在所属 AGENT 回答上方) */
   plan?: AgentPlan | null;
+  /** 上下文压缩事件(时间线卡片) */
+  compression?: AgentCompressionInfo;
 }

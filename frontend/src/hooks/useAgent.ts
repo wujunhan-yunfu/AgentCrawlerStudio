@@ -14,6 +14,7 @@ import type {
 } from "../types";
 import {
   agentAnswer,
+  agentCompress,
   agentCreateSession,
   agentDeleteSession,
   agentFinalize,
@@ -64,6 +65,21 @@ interface AgentEvent {
   ok?: boolean;
   /** ask_user 的回答(回答事件) */
   answers?: Record<string, unknown>;
+  /** 上下文压缩事件 */
+  applied?: boolean;
+  before_tokens?: number;
+  after_tokens?: number;
+  saved_tokens?: number;
+  message_count_before?: number;
+  message_count_after?: number;
+  summarized_messages?: number;
+  keep_messages?: number;
+  summary_chars?: number;
+  history_path?: string | null;
+  duration_ms?: number;
+  version?: number;
+  model?: string;
+  deferred?: boolean;
 }
 
 export interface AgentState {
@@ -99,6 +115,7 @@ export interface AgentState {
   refreshQr: () => Promise<void>;
   cancelLogin: () => Promise<void>;
   stop: () => Promise<void>;
+  compressContext: () => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
 }
@@ -153,6 +170,8 @@ const ACTIVITY_TYPES = new Set([
   "login_request",
   "login_timeout",
   "login_success",
+  "context_compression",
+  "context_compression_error",
   "done",
   "error",
   "session_end",
@@ -330,6 +349,32 @@ function buildFeedFromMessages(messages: AgentStoredMessage[]): {
           state: err ? "error" : "done",
         });
       }
+    } else if (m.type === "context_compression") {
+      if (meta.applied === false) continue;
+      feed.push({
+        kind: "compression",
+        compression: {
+          applied: true,
+          reason: (meta.reason as string) ?? "auto",
+          before_tokens: meta.before_tokens as number | undefined,
+          after_tokens: meta.after_tokens as number | undefined,
+          saved_tokens: meta.saved_tokens as number | undefined,
+          message_count_before: meta.message_count_before as number | undefined,
+          message_count_after: meta.message_count_after as number | undefined,
+          summarized_messages: meta.summarized_messages as number | undefined,
+          keep_messages: meta.keep_messages as number | undefined,
+          summary_chars: meta.summary_chars as number | undefined,
+          history_path: (meta.history_path as string | null | undefined) ?? null,
+          duration_ms: meta.duration_ms as number | undefined,
+          version: meta.version as number | undefined,
+          model: meta.model as string | undefined,
+        },
+      });
+    } else if (m.type === "context_compression_error") {
+      feed.push({
+        kind: "compression",
+        compression: { applied: false, error: m.content, reason: (meta.reason as string) ?? "auto" },
+      });
     } else if (m.type === "editor_code") {
       const to = m.content;
       const base = (meta.base as string) ?? "";
@@ -842,6 +887,57 @@ export function useAgent(): AgentState {
         flushStreaming(sid);
         break;
       }
+      case "context_compression_start": {
+        if (!sid) break;
+        pushToFeed(sid, { kind: "status", content: t("agent.compressing") });
+        break;
+      }
+      case "context_compression": {
+        if (!sid) break;
+        flushStreaming(sid);
+        if (msg.applied === false) break;
+        pushToFeed(sid, {
+          kind: "compression",
+          compression: {
+            applied: true,
+            reason: msg.reason ?? "auto",
+            before_tokens: msg.before_tokens,
+            after_tokens: msg.after_tokens,
+            saved_tokens: msg.saved_tokens,
+            message_count_before: msg.message_count_before,
+            message_count_after: msg.message_count_after,
+            summarized_messages: msg.summarized_messages,
+            keep_messages: msg.keep_messages,
+            summary_chars: msg.summary_chars,
+            history_path: msg.history_path ?? null,
+            duration_ms: msg.duration_ms,
+            version: msg.version,
+            model: msg.model,
+          },
+        });
+        break;
+      }
+      case "context_compression_error": {
+        if (!sid) break;
+        flushStreaming(sid);
+        pushToFeed(sid, {
+          kind: "compression",
+          compression: {
+            applied: false,
+            error: msg.error ?? msg.content ?? t("agent.compressFailed"),
+            reason: msg.reason ?? "auto",
+          },
+        });
+        break;
+      }
+      case "context_compression_requested": {
+        if (!sid) break;
+        pushToFeed(sid, {
+          kind: "status",
+          content: msg.deferred ? t("agent.compressRequested") : t("agent.compressRequestedNow"),
+        });
+        break;
+      }
       case "tool": {
         if (!sid) break;
         if (msg.name && HIDDEN_TOOL_NAMES.has(msg.name)) break;
@@ -1319,6 +1415,25 @@ export function useAgent(): AgentState {
     }
   }, [pushToFeed, updateSessionInfo]);
 
+  const compressContext = useCallback(async () => {
+    const sid = activeRef.current;
+    if (!sid) return;
+    try {
+      const r = await agentCompress(sid, crawlerIdRef.current ?? undefined);
+      pushToFeed(sid, {
+        kind: "status",
+        content: r.deferred ? t("agent.compressRequested") : t("agent.compressRequestedNow"),
+      });
+    } catch (e) {
+      pushToFeed(sid, {
+        kind: "error",
+        content: t("agent.compressFailed", {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+      });
+    }
+  }, [pushToFeed]);
+
   const activeSession = activeId ? (sessionsRef.current[activeId] ?? null) : null;
   const busy = sessions.some(
     (s) => s.status === "running" || s.status === "waiting",
@@ -1355,6 +1470,7 @@ export function useAgent(): AgentState {
     refreshQr,
     cancelLogin,
     stop,
+    compressContext,
     deleteSession,
     renameSession,
   };
