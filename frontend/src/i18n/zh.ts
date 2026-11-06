@@ -214,6 +214,7 @@ export const zh = {
   "live.sent": "已发送",
   "live.controlOff": "远程控制已关闭",
   "live.controlPaused": "脚本执行中，远程控制已暂停",
+  "live.agentControlPaused": "Agent 执行中，远程控制已暂停",
   "live.controlConnecting": "控制通道连接中...",
   "live.noActivePage": "浏览器无活动页面",
   "live.clickZoom": "点击放大",

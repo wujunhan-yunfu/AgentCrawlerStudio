@@ -10,6 +10,7 @@ import LiveView from "./components/LiveView";
 import OutputBar from "./components/OutputBar";
 import Sidebar from "./components/Sidebar";
 import { useLiveStream } from "./hooks/useLiveStream";
+import { useAgent } from "./hooks/useAgent";
 import { useRemoteControl } from "./hooks/useRemoteControl";
 import { useConsole } from "./hooks/useConsole";
 import { useProblems } from "./hooks/useProblems";
@@ -62,6 +63,7 @@ export default function App() {
   const problems = useProblems(model);
   const { imgRef, connected, lagMs, fps, width, height, conflict, kicked, stopped, resolveConflict } = useLiveStream();
   const control = useRemoteControl();
+  const agent = useAgent();
   const consoleState = useConsole();
   const status = useStatus();
   const versions = useVersions(code, setCode);
@@ -371,6 +373,17 @@ export default function App() {
 
   const hasBrowser = Boolean(status?.chrome);
 
+  // 远程控制权: 本地脚本执行或 Agent 执行期间锁定; 等待用户输入(登录弹窗 / ask_user / page_login)
+  // 时临时释放, 执行结束或输入完成后由执行方自动重新锁定/释放。
+  const agentLocked = agent.browserControlLocked;
+  const scriptLocked = running && !runLogin;
+  const browserControlLocked = scriptLocked || agentLocked;
+  const browserLockReason: "script" | "agent" | null = scriptLocked
+    ? "script"
+    : agentLocked
+      ? "agent"
+      : null;
+
   return (
     <div className="vscode-layout" style={{ "--output-h": `${outputHeight}px` } as CSSProperties}>
       <ActivityBar active={activePanel} onSelect={handleSelect} />
@@ -378,6 +391,7 @@ export default function App() {
         panel={activePanel}
         onClose={() => setActivePanel(null)}
         status={status}
+        agent={agent}
         onAgentCode={handleAgentCode}
         versions={versions}
         width={sidebarWidth}
@@ -438,7 +452,8 @@ export default function App() {
         maximized={liveMaximized}
         onToggle={() => setLiveMaximized((m) => !m)}
         control={control}
-        running={running}
+        locked={browserControlLocked}
+        lockReason={browserLockReason}
       />
       {runLogin ? (
         <RunLoginModal

@@ -221,6 +221,7 @@ export const en: Record<MessageKey, string> = {
   "live.sent": "Sent",
   "live.controlOff": "Remote control is off",
   "live.controlPaused": "Script is running, remote control paused",
+  "live.agentControlPaused": "Agent is running, remote control paused",
   "live.controlConnecting": "Connecting control channel...",
   "live.noActivePage": "No active page in browser",
   "live.clickZoom": "Click to enlarge",

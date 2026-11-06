@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { PanelKey, Status } from "../types";
 import type { VersionsState } from "../hooks/useVersions";
+import type { AgentState } from "../hooks/useAgent";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../i18n";
 import AgentPanel from "./AgentPanel";
@@ -14,6 +15,7 @@ interface Props {
   panel: PanelKey | null;
   onClose: () => void;
   status: Status | null;
+  agent: AgentState;
   onAgentCode?: (code: string, base?: string | null) => void;
   versions?: VersionsState;
   width: number;
@@ -30,7 +32,7 @@ const TITLES: Record<PanelKey, MessageKey> = {
   versions: "activity.versions",
 };
 
-export default function Sidebar({ panel, onClose, status, onAgentCode, versions, width, onResizeStart }: Props) {
+export default function Sidebar({ panel, onClose, status, agent, onAgentCode, versions, width, onResizeStart }: Props) {
   const { t } = useI18n();
   let body: ReactNode = null;
   switch (panel) {
@@ -49,6 +51,7 @@ export default function Sidebar({ panel, onClose, status, onAgentCode, versions,
     case "agent":
       body = (
         <AgentPanel
+          agent={agent}
           onAgentCode={onAgentCode}
           onClose={onClose}
         />

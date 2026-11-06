@@ -20,7 +20,10 @@ interface Props {
   maximized: boolean;
   onToggle: () => void;
   control: RemoteControlState;
-  running: boolean;
+  /** 远程控制是否锁定(本地脚本执行 / Agent 执行中) */
+  locked: boolean;
+  /** 锁定原因: script=本地脚本执行, agent=Agent 执行 */
+  lockReason: "script" | "agent" | null;
 }
 
 interface Mods {
@@ -59,7 +62,7 @@ function mods(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey
 
 export default function LiveView({
   imgRef, connected, lagMs, fps, hasBrowser, connecting, stopped, kicked, width, height,
-  highlight, maximized, onToggle, control, running,
+  highlight, maximized, onToggle, control, locked, lockReason,
 }: Props) {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -73,7 +76,7 @@ export default function LiveView({
 
   const logoTitle = connecting ? t("live.connecting") : t("live.noBrowser");
   // 远程控制仅在放大窗口时可用; 缩小(右侧)时保持原行为: 点击窗口放大
-  const controlActive = maximized && controlOn && !running && control.enabled && control.connected && hasBrowser;
+  const controlActive = maximized && controlOn && !locked && control.enabled && control.connected && hasBrowser;
 
   const highlightStyle = ((): React.CSSProperties | null => {
     const img = imgRef.current;
@@ -264,7 +267,7 @@ export default function LiveView({
 
   const hint = (() => {
     if (!controlOn) return t("live.controlOff");
-    if (running) return t("live.controlPaused");
+    if (locked) return t(lockReason === "agent" ? "live.agentControlPaused" : "live.controlPaused");
     if (!control.connected) return t("live.controlConnecting");
     if (!control.enabled) return t("live.noActivePage");
     return null;
@@ -318,7 +321,7 @@ export default function LiveView({
             </div>
           ) : null}
           {maximized && hint ? <div className="live-control-hint">{hint}</div> : null}
-          {maximized && controlOn && !running ? (
+          {maximized && controlOn && !locked ? (
             <div className="live-textinput">
               <textarea
                 rows={1}

@@ -86,6 +86,8 @@ export interface AgentState {
   connected: boolean;
   /** 是否有任意会话正在运行/等待确认(产品只支持单 Agent 运行) */
   busy: boolean;
+  /** Agent 是否应锁定前端浏览器的远程控制权(执行中锁定, 等待用户输入或结束即释放) */
+  browserControlLocked: boolean;
   crawlerId: string | null;
   sessions: AgentSessionInfo[];
   activeId: string | null;
@@ -1438,10 +1440,18 @@ export function useAgent(): AgentState {
   const busy = sessions.some(
     (s) => s.status === "running" || s.status === "waiting",
   ) || status === "running" || status === "waiting";
+  // 浏览器控制权由 Agent 会话状态决定:
+  // - running: 正在执行(含浏览器操作 / 执行代码), 全程锁定;
+  // - waiting: 等待 ask_user / page_login 等用户输入, 释放给用户操作;
+  // - done/error/cancelled/idle: 执行结束, 释放。
+  const browserControlLocked =
+    sessions.some((s) => s.status === "running") ||
+    (!sessions.some((s) => s.status === "waiting") && status === "running");
 
   return {
     connected,
     busy,
+    browserControlLocked,
     crawlerId,
     sessions,
     activeId,

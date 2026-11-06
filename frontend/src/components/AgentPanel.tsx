@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { AgentFeedItem, AgentLoginRequest, AgentPlan, AgentQuestion, AgentStatus } from "../types";
-import { useAgent } from "../hooks/useAgent";
+import type { AgentState } from "../hooks/useAgent";
 import { useI18n, t } from "../i18n";
 import type { MessageKey } from "../i18n";
 import AgentDiffCard from "./AgentDiffCard";
@@ -1283,13 +1283,14 @@ const SessionDropdown = forwardRef<SessionDropdownHandle, {
 });
 
 export default function AgentPanel({
+  agent,
   onAgentCode,
   onClose,
 }: {
+  agent: AgentState;
   onAgentCode?: (code: string, base?: string | null) => void;
   onClose?: () => void;
 }) {
-  const agent = useAgent();
   const { t } = useI18n();
   const feedRef = useRef<HTMLDivElement | null>(null);
   const sessionDropdownRef = useRef<SessionDropdownHandle | null>(null);
